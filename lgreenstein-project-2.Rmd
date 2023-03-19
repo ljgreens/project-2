@@ -1,0 +1,2939 @@
+---
+title: "Predicting Disk Hernia and Spondylolisthesis using Geometry Measures Derived from Medical Imagery"
+author: "Leighton Greenstein"
+date: '2023-03-19'
+output:
+  pdf_document:
+    number_sections: true
+  html_document:
+    number_sections: true
+fontsize: 12pt
+---
+
+```{r, project-notes, echo=FALSE, warning=FALSE, message=FALSE}
+
+# HarvardX PH125.9x Data Science: Capstone
+# Project: Choose Your Own: Vertebral Column Data Set (UCI Machine Learning Repo)
+# By: Leighton Greenstein
+# Last Modified: March 19, 2023
+
+# Important Notes about Running this Script:
+# 1. This script was developed and run on the following OS and machine:
+#    Machine: Lenovo T460s (upgraded)
+#    Processor: Intel(R) Core(TM) i5-7300U CPU @ 2.60GHz   
+#    Installed Ram: 16.0 GB (15.8 GB usable)
+#    Operating System: Windows 10 Pro
+#        64-bit operating system, x64-based processor
+#    R Version: R version 4.2.1 (2022-06-23 ucrt)
+# 2. The total run-time for this script on the above hardware, not counting
+#    installation of any required packages, is approximately 2 minutes to 
+#    run all and 30 seconds to knit to pdf
+# 3. Any of the libraries listed in the `package-inclusion-installation` are
+#    installed beforehand using if(!require) statements
+# 5. Functions have not been used for repetitive coding operations due 
+#    the marking rubric requesting code that "runs easily, [and] is easy to 
+#    follow".  For that reason, the code is written in script form
+# 6. Vignettes used to facilitate code development are referenced in APA
+# 7. Three hash tags identifies comments that provide a high level explanation of
+#    what the code is producing
+# 8. One hash tag identifies comments that are specific to what a few lines
+#    of code are producing
+# 9. Blocked header comments are included to describe general processes
+# 10. If asked to restart R session for install of libraries, select no;
+#     after the libraries are installed, R will need to be closed and reopened
+#     and the script will need to be run again.  This is particularly the case
+#     for the tidyverse because of all the additional libraries it uses; was
+#     a bit finicky during testing
+
+```
+
+
+```{r, package-inclusion-installation, echo=FALSE, warning=FALSE, message=FALSE}
+
+################################################################################
+################################################################################
+#               DOWNLOAD AND INSTALL PACKAGES IF MISSING                       #
+################################################################################
+################################################################################
+
+
+if(!require(caret)) install.packages("caret", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(cowplot)) install.packages("cowplot", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(kableExtra)) install.packages("kableExtra", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(MASS)) install.packages("MASS", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(randomForest)) install.packages("randomForest", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(RCurl)) install.packages("RCurl", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(readr)) install.packages("readr", 
+                                     repos = "http://cran.us.r-project.org")
+
+if(!require(tidyverse)) install.packages("tidyverse", 
+                                         repos = "http://cran.us.r-project.org")
+
+
+# initialize all libraries that are used throughout the project
+library(caret)
+library(cowplot)
+library(kableExtra)
+library(MASS)
+library(randomForest)
+library(RCurl)
+library(readr)
+library(tidyverse)
+
+```
+
+# Introduction
+
+Machine learning continues to become more prevalent in daily life.  For
+example, despite having a search function, Amazon uses recommender systems to 
+ease the information overload of having millions of products to choose from,
+so that online shopping is more enjoyable and sales are positively impacted.  In
+addition, traffic predictions are made from GPS navigation position and 
+velocity information, which are loaded into real-time maps to visualize 
+predicted areas of congestion, which can help reduce commute times 
+(Daffodil Software, 2017).  Furthermore, machine learning can also bring value
+to the medical field.
+
+For this project, the Vertebral Column Data Set (Mota et al., 2011) from
+the University of California's Machine Learning Repository was used to develop 
+a preliminary framework for assessing the potential of machine learning 
+solutions for use in future medical image augmentation systems.  This 
+Vertebral Column Data Set contains six anatomical predictors derived from 
+lumbar spine and pelvis relationships that were measured from medical imagery, 
+three associated lumbar spine classification types, and 310 patient 
+records.  More specifically, each of the 310 patient records contain measures of 
+Pelvic Incidence (PI), Pelvic tilt (PT), Lumbar Lordosis (LL), Sacral Slope 
+(SS), Pelvic Radius (PR), and Spondylolisthesis Grade (SG).  In total, the 
+310 patients consist of 100 Normal (NO) classes, 60 Disk Hernia (DH) classes,
+and 150 Spondylolisthesis (SL) classes.  
+
+For this supervised machine learning exercise, a number of key steps were 
+performed in pursuit achieving the goal of producing a machine learning solution
+that could be considered for use in a future machine learning medical image
+augmentation system.  These steps included data acquisition; data preparation;
+data cleaning; data splitting into a training, test, and verification data 
+set; data exploration and data visualization; a modeling approach; and model
+fitting which incorporated cross-validation along with parameter tuning for 
+some of the models.  After model cross-validation and parameter tuning was 
+complete, the classification solutions were applied to the verification data 
+set, and the results were assessed using metrics derived from the confusion
+matrix to determine suitability as imaging augmentation information.  Overall, 
+a mean score of 0.70 computed from balanced accuracy, F1-Score, and precision 
+was set as a threshold to be met or exceeded for the machine learning class 
+prediction to achieve the goal of being considered for implementation 
+within a future medical image augmentation system.
+
+# Methods and Analysis
+
+In general, data science projects require the identification of patterns and 
+trends within data and other important data characteristics, all of which 
+tell a story.  Using R, a programming language with origins in
+statistical computation and graphics (The R Foundation, n.d.), these noteworthy 
+insights are communicated throughout, and ultimately, these insights
+guided the model selection and development.
+
+## Data Aquisition
+
+Initially, the Vertebral Column Data Set (Mota et al., 2011) was obtained from 
+the University of California's Machine Learning Repository through an automated 
+download and in-memory storage of R objects, which were created from 
+the downloaded data. As the foundation of the data download and storage, a
+previous script supplied by the course team for the HarvardX Professional 
+Certificate in Data Science (Irizarry, n.d.) was used as vignette and modified 
+as needed to complete the task.  Within the downloaded data, there were two
+data sets: one binary classification data set, and the three class data set 
+described in the introduction with the file name column_3C.dat that was used 
+here.  To conform to the recommendations of this project, the column_3C.dat
+file was loaded to the author's GitHub repository, where the process to obtain
+the data now is to download the data from the GitHub repository.  Should the
+GitHub repository be unavailable, then the data download reverts back to the
+University of California's Machine Learning Repository.  With the data 
+downloaded and accessible, further data preparation tasks were undertaken.
+
+## Data Preparation
+
+Data preparation is an important first step in any data science project 
+(Wickham, 2014).  Upon initial inspection, the Vertebral Column Data Set 
+(Mota et al., 2011) is consistent with the characteristics of Tidy Data, 
+where every row is an observation, every column is a variable, and any
+observational units are independent tables (Wickham, 2014).  The rationale for
+working with Tidy Data comes from the increased ease with which data modeling, 
+data manipulating, and data visualization can be achieved (Wickham, 2014).
+Because the data was tidy upon acquisition, little data preparation was 
+required with the exception of providing meaningful column names for the 
+predictors and classes.
+
+The following table displays six randomly sampled rows from the Vertebral 
+Column Data Set:
+
+\newpage
+
+```{r, data-download, echo=FALSE, warning=FALSE, message=FALSE}
+
+################################################################################
+################################################################################
+#                                 DATA AQUISITION                              #
+################################################################################
+################################################################################
+
+### Automatically download data from GitHub and create orthoData data frame
+### to hold the data.  If GitHub is down, download the data from the UCI
+### Machine Learning Repository.  If data no longer exists on machine learning
+### repository, provide GitHub web address to download data manually
+gitHubRepo <- "https://raw.githubusercontent.com/ljgreens/project-2/main/data/column_3C.dat"
+
+# Check to see that GitHub Repo exists and download data and store to orthoData
+# data frame
+if(url.exists(gitHubRepo) == TRUE) {
+  
+  # Read the downloaded ortho-spine geometry and spine classification data
+  # into a data frame using read_delim to parse the file based on auto
+  # identification of the delimiter based on the GitHub location
+  orthoData <- as.data.frame(read_delim(gitHubRepo, show_col_types = FALSE, col_names = FALSE))
+  
+} else {
+
+  # Download the Vertebral Column Data Set from the UCI Machine Learning 
+  # Repository (Mota et al., 2011).  Data download vignette provided by 
+  # Irizarry (n.d.) Data Science Capstone project - 1
+  
+  UCI_repository <- "https://archive.ics.uci.edu/ml/machine-learning-databases/00212/vertebral_column_data.zip"
+  
+  # Check to see that the UCI Machine Learning Repository Data exists, if not
+  # send a message to the user to download the data from the GitHub location
+  # manually by providing the website in the error message
+  if(!url.exists(UCI_repository)) {
+    stop("GitHub Connection Down and Data from UCI Machine Learning Repo not Available...
+         Please download data from the gitHub using the following web address: 
+         https://raw.githubusercontent.com/ljgreens/project-2/main/data/column_3C.dat")
+  }
+  
+  # Complete the download and unzip of the data from the UCI 
+  # Machine Learning Repository
+  dl <- "vertebral_column_data.zip"
+  if(!file.exists(dl))
+    download.file(UCI_repository, dl)
+  # Create data file object to hold the unzipped Vertebral Column data for
+  # this project and unzip the downloaded folder to access contents
+  dataFile <- "column_3C.dat"
+  if(!file.exists(dataFile))
+    unzip(dl)
+  
+  # Read the downloaded ortho-spine geometry and spine classification data
+  # into a data frame using read_delim to parse the file based on auto
+  # identification of the delimiter
+  orthoData <- as.data.frame(read_delim(dataFile, show_col_types = FALSE, col_names = FALSE))
+}
+
+
+```
+
+
+```{r, data-display-table, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Prepare the data for initial display as a table within the report
+
+# Name the columns of the orthoData dataframe based on the 
+# UCI Machine Learning Repository information (Mota et al., 2011)
+columnNames <- c("pelvicIncidence", 
+                 "pelvicTilt", 
+                 "lumbarLordosis",
+                 "sacralSlope", 
+                 "pelvicRadius", 
+                 "spondylolisthesisGrade",
+                 "diseaseClassification")
+
+# Apply the column names to the orthoData data frame
+colnames(orthoData) <- columnNames
+
+### Randomly Sample the orthoData Data Frame to display six rows of data
+
+# Set seed to 1 so that the same random sample is generated each time the 
+# script is run
+set.seed(1, sample.kind = "Rounding")
+
+# mirror the row index of the orthoData data frame for sample() to extract random 
+# sample of indexes from the orthoData data frame
+rows <- c(1:nrow(orthoData))
+
+# extract the random sample of 6 indices to be applied to the orthoData data frame
+snapshot_index <- sample(rows, 6, replace = FALSE)
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(orthoData[snapshot_index,],
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Sample Vertebral Column Data Acquired from UCI Machine Learning Repository") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+## Data Cleaning
+
+A reliable analysis and repeatable results are difficult to attain if the input
+data has errors and omissions.  For example, missing values in a data set 
+that are zero when zero is not representative of the feature can result in a 
+mean that is biased, and machine learning algorithms may fail to train or 
+produce reliable solutions on data that is missing values.
+
+To ensure the Vertebral Column Data was free from the pitfalls that data error 
+and omissions create, all columns of the data set were tested for NA values. 
+The search for NA data within the Vertebral Column Data Set was achieved by 
+counting the number of NA values present in each predictor and each 
+classification.  This NA count information is summarized in the table below:
+
+
+``` {r, na-investigation, echo=FALSE, warning=FALSE, message=FALSE}
+
+################################################################################
+################################################################################
+#                                DATA CLEANING                                 #
+################################################################################
+################################################################################
+
+
+### Determine whether the data set has any "na" values or "0" and store the 
+### results to a data frame called `dataInspection`
+
+# Obtain the names of the columns in the `orthoData` data frame
+rowNames <- names(orthoData)
+# Set the column names for the `dataInspection` data frame
+colNames <- c("Column", "NA_Count")
+
+# Create an empty data frame as a matrix sized to the rowNames and colNames
+# as created above and cast to data frame
+dataInspection <- data.frame(matrix(nrow = length(rowNames), ncol = length(colNames)))
+
+# Rename the rows and columns
+rownames(dataInspection) <- rowNames
+colnames(dataInspection) <- colNames
+
+# Set column data types
+dataInspection$NA_Count   <- as.numeric(dataInspection$NA_Count)
+
+# Determine if any of the columns in the `orthoData` dataframe have NA values
+# and write the number of NA values to a dataframe called `dataInspection`
+for(i in 1:nrow(dataInspection)) {
+  dataInspection[i, "Column"] <- rowNames[i]
+  dataInspection[i,"NA_Count"] <- length(which(is.na(orthoData[,i])))
+}
+
+# Change the column names for display in the table for output
+colnames(dataInspection) <- c("Column", "NA Count")
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(dataInspection,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Counts of NA Values Within Vertebral Column Data Set") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+Seeing that the Vertebral Column Data was free of NA values, the next data
+cleaning step focused on data type verification, and confirming that 
+the anatomical predictor values are representative of geometric measures.
+The data type for each predictor are summarized in the following 
+table, along with the predictor range expressed as the minimum and maximum 
+values:
+
+``` {r, data-class-range, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Build a table to display the class of each column within the 
+### Vertebral Column Data Set
+
+# Create an empty data frame to hold the class values for each column of the
+# Vertebral Column Data Set
+columnData <- data.frame()
+
+# Loop through all of the orthoData data frame column names and extract the
+# class of the column, which is written to the `columnClass` data frame
+for(i in 1:ncol(orthoData)) {
+  columnData[i, 1] <- columnNames[i]
+  columnData[i, 2] <- class(orthoData[,i])
+  if(class(orthoData[,i]) != "numeric"){
+    columnData[i, 3] <- NA
+    columnData[i, 4] <- NA
+  } else {
+    columnData[i, 3] <- min(orthoData[,i])
+    columnData[i, 4] <- max(orthoData[,i])
+  }
+}
+
+# Provided updated display names for the columnData dat fram for display
+# in the following table
+columnDataNames <- c("Column Name", "Class", "Minimum", "Maximum")
+colnames(columnData) <- columnDataNames
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(columnData,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Vertebral Column Data Set Metadata") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+```
+
+Because Pelvic Incidence, Pelvic Tilt, Lumbar Lordosis, Sacral Slope,
+Pelvic Radius, and Spondylolisthesis Grade are measured anatomical 
+values, their numeric class is a valid representation.  Although Pelvic 
+Incidence, Pelvic Tilt, Lumbar Lordosis, Sacral Slope, and Pelvic Radius 
+appear to be within reasonable ranges, Spondylolisthesis Grade stood out
+based on the connection of the name to the Meyerding Classification System
+(Koslosky & Gendelberg, 2020), which suggested that it may be a 
+class instead of a predictor.  Within the Meyerding Classification
+System, the degree of slip between vertebrae obtained from medical imagery
+is provided as a percentage (Koslosky & Gendelberg, 2020); more precisely,
+
+|     [t]he grade percent is determined by drawing a line through the posterior
+|     wall of the superior and inferior vertebral bodies and measuring the
+|     translation of the superior vertebral body as a percentage of the distance
+|     between the two lines. (Koslosky & Gendelberg, 2020) 
+
+However, the minimum value of `r min(orthoData$spondylolisthesisGrade)` and 
+maximum value of `r max(orthoData$spondylolisthesisGrade)` affirm that the 
+Meyerding Classification System was not the unit of measure for 
+Spondylolisthesis Grade within the Vertebral Column Data set because of the 
+negative values.  For reference, the Meyerding Classification System grades 
+and percentages are shown in the following table:
+
+``` {r, meyerding-classification-table, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Secondary research on Spondylolisthesis Grade shows a grade and percentage
+### of vertebrae slip. Build a data frame to display these researched values
+### in the report.  Rating system is call Meyerding Classification System
+### (Koslosky & Gendelberg, 2020)
+
+# Create data frame to hold the grades and percentages of the Meyerding
+# Classifications
+meyerdingClassification <- data.frame(Grade = NULL, Percentage_Range = NULL)
+
+# Populate the Meyerding Classification Grade and Percentage Range Manually
+# so the values can be rendered into a nicely formatted knitr::kable
+meyerdingClassification[1,"Grade"] <- 1
+meyerdingClassification[1,"Percentage_Range"] <- "0% to 25%"
+meyerdingClassification[2,"Grade"] <- 2
+meyerdingClassification[2,"Percentage_Range"] <- "25% to 50%"
+meyerdingClassification[3,"Grade"] <- 3
+meyerdingClassification[3,"Percentage_Range"] <- "50% t0 75%"
+meyerdingClassification[4,"Grade"] <- 4
+meyerdingClassification[4,"Percentage_Range"] <- "75% to 100%"
+meyerdingClassification[5,"Grade"] <- 5
+meyerdingClassification[5,"Percentage_Range"] <- "> 100%"
+
+# Rename the meyerdingClassification data frame columns for cleaner display
+meyerdingClassificationNames <- c("Grade", "Percentage Range")
+colnames(meyerdingClassification) <- meyerdingClassificationNames
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(meyerdingClassification,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Meyerding Classification Grades and Vertebrae Slip Percentages") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+(Koslosky & Gendelberg, 2020)
+
+Even though the physical interpretation of the Spondylolisthesis Grade measure 
+in the Vertebral Column Data Set was unknown, since the Vertebral Column values 
+for Spondylolisthesis Grade were not Meyerding Classifications and 
+the predictor definitions within the University of California's Machine Learning
+Repository identified Spondylolisthesis Grade as an attribute (not class), 
+they were deemed to be valid for use as predictors.
+
+As the last data check before moving forward with data exploration and data
+visualization, Le Huec et al. (2011) reveals the relationship between Pelvic 
+Incidence (PI), Pelvic Tilt (PT), and Sacral Slope (SS) as shown in the 
+following equation:
+
+\[PI = PT + SS\]
+
+As described by the equation above, the sum of the Pelvic Tilt and Sacral Slope 
+from the Vertebral Column Data Set should match the Pelvic Incidence from the 
+Vertebral Column Data Set within a reasonable margin of error, considering that
+Pelvic Tilt and Sacral Slope are measured values and measurements are random 
+variables with uncertainty.  The following table displays a random sample of the 
+difference between the computed Pelvic Incidence and the Pelvic Incidence 
+provided within the Vertebral Column Data Set:
+
+``` {r, pelvic-incidence-comparison, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Review the data value computations for Pelvic Incidence using the 
+### Formula PI = PT + SS (Le Huec et al., 2011) to validate the PI, PT, and SS
+### Provided in the Vertebral Column Data Set do not have errors
+
+# Subset the orthoData data frame to contain only the Pelvic Incidence (PI), 
+# Pelvic Tilt (PT), and Sacral Slope (SS) to compute the PI from the 
+# Vertebral Column Data Set using the measured PT and SS
+pelvicIncidence <- orthoData %>% dplyr::select(pelvicIncidence,
+                                        pelvicTilt,
+                                        sacralSlope)
+
+# Compute PI = PT + SS and the difference between the computed PI and the
+# PI that came as raw data from the Vertebral Column Data Set
+pelvicIncidence <- pelvicIncidence %>%
+  mutate(PI_Computed = pelvicTilt + sacralSlope) %>%
+  mutate(Delta_PI = pelvicIncidence - PI_Computed)
+
+# Set seed to 1 so that the same random sample is generated each time the 
+# script is run
+set.seed(1, sample.kind = "Rounding")
+
+# mirror the row index of the pelvicIncidence data frame for sample() to extract random 
+# sample of indexes from the pelvicIncidence data frame
+rows <- c(1:nrow(pelvicIncidence))
+
+# extract the random sample of 6 indices to be applied to the pelvicIncidence data frame
+snapshot_index <- sample(rows, 6, replace = FALSE)
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(pelvicIncidence[snapshot_index,],
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Pelvic Incidence, Pelvic Tilt, and Sacral Slope Data Verification") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+
+```
+
+From the six random samples shown in the table above, the differences in 
+the Vertebral Column Data Set Pelvic Incidence and the computed Pelvic 
+Incidence were zero or close to zero. However, the table shows only six of
+the 310 differences. To further explore the Pelvic Incidence verification 
+results, the following summary statistics of the difference between the 
+Vertebral Column Data Set Pelvic Incidence and the computed Pelvic Incidence
+(Delta_PI) are presented in the table below:
+
+``` {r, pelvic-incidence-summary-stats, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Compute Summary Statistics of the Change in PI between the values given
+### in the Vertebral Column Data Set and the Computed (Delta_PI) to see
+### whether the range of differences is outside expected measurement uncertainty
+
+# Summary Statistics of delta_PI in the pelvicIncidence data frame
+summaryData <- summary(pelvicIncidence$Delta_PI)
+
+# Create data frame to hold the Delta_PI summary statistics
+summary_df <- data.frame(Minimum = NULL,
+                         FirstQuartile = NULL,
+                         Median = NULL,
+                         Mean = NULL,
+                         ThirdQuartile = NULL,
+                         Maximum = NULL)
+
+# Populate the summary data frame with Delta_PI summary statistics
+summary_df[1, "Minimum"] <- summaryData[1]
+summary_df[1, "FirstQuartile"] <- summaryData[2]
+summary_df[1, "Median"] <- summaryData[3]
+summary_df[1, "Mean"] <- summaryData[4]
+summary_df[1, "ThirdQuartile"] <- summaryData[5]
+summary_df[1, "Maximum"] <- summaryData[6]
+
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(summary_df,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Summary Statistics for Delta Pelvic Incidence") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+```
+
+``` {r, scientific-notation, echo=FALSE, warning=FALSE, message=FALSE}
+# Set options to turn off scientific notation to show mean of Delta_PI
+# in the inline code below as a decimal
+options(scipen = 100)
+```
+
+With a range of -0.01 to 0.01 and a mean difference between the Vertebral 
+Column Data Set Pelvic Incidence and the computed Pelvic Incidence of 
+`r summary_df$Mean`, the Vertebral Column Data Set predictors of Pelvic 
+Incidence, Pelvic Tilt, and Sacral slope were deemed to be reliable for
+machine learning purposes.
+
+Overall, the Vertebral Column Data downloaded from the University of 
+California's Machine Learning Repository did not require additional 
+modification to transform it to a Tidy Data set, nor did it require additional 
+cleaning.  With the integrity of Vertebral Column Data Set confirmed, the 
+data was ready to be split into training, test, and validation subsets. 
+
+## Data Splitting
+
+In general, very large data sets and very small data sets present their own
+machine learning challenges. Although large data sets offer the benefit of 
+creating training, test, and verification data where class prevalence
+disparity can be eliminated, managing memory and having adequate processing 
+power can be difficult to achieve.  Conversely, small data sets require 
+little memory management and computing power to implement computationally 
+expensive methods, but bias due to prevalence of the classes within the data 
+set can exist within the split data and be transferred to the machine learning 
+solutions, which can cloud the results.  Since the Vertebral Column Data Set is
+small, with only `r nrow(orthoData)` patient classifications and their 
+associated predictors, key to producing reliable results required a strategic 
+data splitting methodology.
+
+Based on the size of the Vertebral Column Data Set, the Law of Large Numbers 
+and the Central Limit Theorem can help guide the data splitting process.
+More specifically, the Law of Large Numbers states that as the number of 
+observations increases, the standard error decreases and the mean of the 
+observations becomes closer to the true mean (Irizzary, 2022, 
+Chapter 14).  In addition, the Central Limit Theorem states that large sample 
+sizes result in a normal distribution (Irizarry, 2022, Chapter 14), which is an 
+fundamental requirement of many machine learning methods and
+a requirement for reliable statistical properties of the predictors.  Often,
+30 observations will produce data that is normal, and sometimes as little
+as 10 observations will suffice (Irizarry, 2022, Chapter 14).
+
+To test the application of the Central Limit Theorem and the Law of Large 
+Numbers to the Vertebral Column Data set, a Monte Carlo Simulation 
+could be preformed on each of the training, test, and validation set 
+predictors to reveal the statistical stability of the sample means 
+and standard errors of those means (Irizarry, 2022).  Alternatively, histograms
+and QQ-Plots are visualization tools that can be used to asses the 
+normality of a sample, which is the method that was used to test the 
+training data normality in the following data exploration and data visualization
+section.
+
+Unfortunately, the data size did not allow for class prevalence correction 
+during data splitting while still maintaining enough data in each split to 
+produce normally distributed predictors.  Therefore, 155 rows, one half of 
+each class of the raw data, was split out of the Vertebral Column Data into 
+a training data set and a verification data set.  To complete the data 
+splitting, the training set was again split approximately in half to contain 
+77 to 78 observations of training and test data with approximately the 
+same class structure as the verification data.  In addition, based on the 
+knowledge of class prevalence presented in the introduction and the discussion
+thus far, class prevalence disparity is expected.  Therefore, the sample 
+function was selected instead of the caret package's createDataPartition 
+function to split the data into training, test, and verification data 
+sets because the createDataPartition function attempts to create data splits 
+that are somewhat statistically similar (Dalpaiz, 2020, Chapter 21).  Yet, the 
+goal is to limit the statistical similarity of the data between the splits 
+while maintaining the same class structure, so that biases have as little 
+transference as possible within the split data.  In other words, the sample 
+function is preferable based on the prevalence of classes in the data set 
+because the sampling of each class will be random, which should increase the 
+likelihood that the final algorithm can generalize better to new data and 
+help mitigate the expected bias.
+
+As noted, as many patient records as possible were kept instead of splitting 
+the data into even smaller sets to correct for class prevalence.  This approach
+was necessary to increase the likelihood that the training, test, and 
+verification data would be normally distributed, and therefore, specific 
+machine learning methods that require normally distributed data would not be 
+excluded from use.  Fortunately, even the performance of methods with bias 
+in the data where normality has been preserved by using all of the data, 
+such as this case, can still be reasonably assessed using specific metrics 
+that include, balanced accuracy and F1-Score, because those metrics have the
+ability to account for the class prevalence bias (Olugbenga, 2023).  
+Consequently, determining the best performing method is possible using the 
+entire data set, while retaining as many machine learning methods to choose 
+from.  Still, caution must be exercised given the possibility that class 
+prevalence bias could jeopardize the ability of the solution to generalize to 
+new data.  
+
+To summarize the data splitting technique, all records were kept to provide
+the best chance for predictors to follow a normal distribution, which helped 
+qualify the split data for use within a variety of machine learning 
+algorithms that require normal data.  In addition, the sample function was 
+used over the createDataPartition function to assist in mitigating the 
+class prevalence bias within the Vertebral Column Data Set, yet bias is still 
+expected to persist in the training, test, and verification data to an unknown 
+degree.  The following table provides the class counts that were used to 
+construct the training and verification data sets:   
+
+
+``` {r, class-counts, echo=FALSE, warning=FALSE, message=FALSE}
+
+################################################################################
+################################################################################
+#                                DATA SPLITTING                                #
+################################################################################
+################################################################################
+
+### Determine the number of observations in each classification and the 
+### proportion to include in the training data set (1/2) and set the minimum 
+### number of observations to 30 based on the Central Limit Theorem (Irizarry, 
+### 2022, Chapter 14) to hopefully obtain normally distributed predictors
+
+# Create data frame grouped by class that contains half of the data listed
+# as training data and the other half as verification data
+orthoData_ClassSummary <- orthoData %>%
+  group_by(diseaseClassification) %>%
+  summarize(count = n()) %>% 
+  mutate(training_counts = round(count*(1/2),0)) %>%
+  mutate(verification_counts = count - training_counts) 
+
+# Loop to apply the minimum 30 observation Central Limit Theorem Rule
+# to ensure no matter the split (1/2, 2/3, etc) the classes will have
+# 30 or more observations per class
+for(i in 1:nrow(orthoData_ClassSummary)) {
+  if(orthoData_ClassSummary[i, "verification_counts"] < 30) {
+    orthoData_ClassSummary[i, "verification_counts"] <- 30
+    orthoData_ClassSummary[i, "training_counts"] <- orthoData_ClassSummary[i, "count"] - orthoData_ClassSummary[i, "verification_counts"]
+  }
+}
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(orthoData_ClassSummary,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Training Data and Verification Data Class Counts") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+```
+
+With the training and verification data set split determined, the split of
+the training data into a 50 percent training and 50 percent test set 
+using the foregoing data splitting method was performed.  This further division
+of the training data into a training and test data set will allow for model 
+development, cross-validation, and testing of the cross-validated methods prior
+to final testing on the verification data set.  The following tables present
+the number of patient records and their class count for the training, test, and
+verification data sets:
+
+``` {r, data-splitting-train-verification, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Split the data into training and verification data frames
+### Note: training data frame will be further split into training and test
+### data frames further on in the script
+
+# Create 3 data frames to hold the three different classifications of the 
+# Vertebral Column Data Set: DH (Disk Hernia), SL (Spondylolisthesis),
+# and NO (Normal)
+
+dataNO <- orthoData %>% filter(diseaseClassification == "NO")
+dataDH <- orthoData %>% filter(diseaseClassification == "DH")
+dataSL <- orthoData %>% filter(diseaseClassification == "SL")
+
+# Because createDataPartition() attempts to create training and test 
+# data that are somewhat similar (Dalpaiz, 2020, Chapter 21), sample() will be 
+# used instead to generate a split of based on the training counts and 
+# verification counts created previously from each of the following 
+# data frames: dataNO, dataDH, dataSL
+
+# Set the seed to 1 so the same sample is generated if the script is re-run
+# Comment out the set.seed to random generate data splits that can be
+# used to verify that the data splits are multi-variate normal when
+# by the histograms, summary stats, and qq-plots that are produced for
+# each of the predcitors later on in the script
+set.seed(1, sample.kind = "Rounding")
+
+# mirror the row index of the dataNO, dataDH, and dataSL data frames 
+# as vectors for sample() to extract random sample of indexes to break 
+# the data into a training and verification data sets
+rowsNO <- c(1:nrow(dataNO))
+rowsDH <- c(1:nrow(dataDH))
+rowsSL <- c(1:nrow(dataSL))
+
+# Pull the number of training samples for each disease classification type
+# from the `orthoData_ClassSummary` data frame
+nSampleNOTrain <- orthoData_ClassSummary %>% filter(diseaseClassification == "NO") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+nSampleDHTrain <- orthoData_ClassSummary %>% filter(diseaseClassification == "DH") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+nSampleSLTrain <- orthoData_ClassSummary %>% filter(diseaseClassification == "SL") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+
+# extract the random sample of indices to be extracted from each of the 
+# following data frames: dataNO, dataDH, dataSL
+indexNO <- sample(rowsNO, nSampleNOTrain, replace = FALSE)
+indexDH <- sample(rowsDH, nSampleDHTrain, replace = FALSE)
+indexSL <- sample(rowsSL, nSampleSLTrain, replace = FALSE)
+
+# Create the training data data frames for each disease classification
+trainNO <- dataNO[indexNO,]
+trainDH <- dataDH[indexDH,]
+trainSL <- dataSL[indexSL,]
+
+# Combine all of the disease classification training data frames into a
+# single training data data frame
+train <- rbind(trainNO, trainDH, trainSL)
+
+# Create the verification data data frames for each disease classification 
+verificationNO <- dataNO[-indexNO,]
+verificationDH <- dataDH[-indexDH,]
+verificationSL <- dataSL[-indexSL,]
+
+# Combine all of the disease classification verification data frames into a
+# single verification data data frame
+verification <- rbind(verificationNO, verificationDH, verificationSL)
+
+```
+
+
+``` {r, class-counts-training-test, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Determine the number of observations in each classification and the 
+### proportion to include in the training and test data set (1/2) and 
+### set the minimum number of observations to 15 based on the Central Limit 
+### Theorem (Irizarry, 2022, Chapter 14) where as little ast 10 observations
+### can present normal data
+
+# Create data frame grouped by class that contains half of the data listed
+# as training data and the other half as test data from the first split
+# of data into training and verification data sets
+trainData_ClassSummary <- train %>%
+  group_by(diseaseClassification) %>%
+  summarize(count = n()) %>% 
+  mutate(training_counts = round(count*(1/2),0)) %>%
+  mutate(test_counts = count - training_counts) 
+
+# Loop to apply the minimum 15 observations 
+# to ensure no matter the split (1/2, 2/3, etc) the classes will have
+# 15 or more observations per class
+for(i in 1:nrow(trainData_ClassSummary)) {
+  if(trainData_ClassSummary[i, "test_counts"] < 15) {
+    trainData_ClassSummary[i, "test_counts"] <- 15
+    trainData_ClassSummary[i, "training_counts"] <- trainData_ClassSummary[i, "count"] - trainData_ClassSummary[i, "test_counts"]
+  }
+}
+
+```
+
+
+``` {r, data-splitting-train-test, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Split the data into training and test data frames
+
+# Create 3 data frames to hold the three different outcomes of the 
+# Vertebral Column Data Set: DH (Disk Hernia), SL (Spondylolisthesis),
+# and NO (Normal) based on the data within the current training data set
+
+dataNO <- train %>% filter(diseaseClassification == "NO")
+dataDH <- train %>% filter(diseaseClassification == "DH")
+dataSL <- train %>% filter(diseaseClassification == "SL")
+
+# Because createDataPartition() attempts to create training and test 
+# data that are somewhat similar (Dalpaiz, 2020, Chapter 21), sample() will be 
+# used instead to generate a split of 207 samples from each of the following 
+# data frames: dataNO, dataDH, dataSL
+
+# Set the seed to 1 so the same sample is generated if the script is re-run
+set.seed(1, sample.kind = "Rounding")
+
+# mirror the row index of the dataNO, dataDH, and dataSL data frames 
+# as vectors for sample() to extract random sample of indexes to break 
+# the data into a training and verification data sets
+rowsNO <- c(1:nrow(dataNO))
+rowsDH <- c(1:nrow(dataDH))
+rowsSL <- c(1:nrow(dataSL))
+
+# Pull the number of training samples for each disease classification type
+# from the `trainData_ClassSummary` data frame
+nSampleNOTrain <- trainData_ClassSummary %>% filter(diseaseClassification == "NO") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+nSampleDHTrain <- trainData_ClassSummary %>% filter(diseaseClassification == "DH") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+nSampleSLTrain <- trainData_ClassSummary %>% filter(diseaseClassification == "SL") %>%
+  summarize(n = training_counts) %>% as.numeric()
+
+
+# extract the random sample of 207 indices to be extracted from each of the 
+# following data frames: dataNO, dataDH, dataSL
+indexNO <- sample(rowsNO, nSampleNOTrain, replace = FALSE)
+indexDH <- sample(rowsDH, nSampleDHTrain, replace = FALSE)
+indexSL <- sample(rowsSL, nSampleSLTrain, replace = FALSE)
+
+# Create the training data data frames for each disease classification
+trainNO <- dataNO[indexNO,]
+trainDH <- dataDH[indexDH,]
+trainSL <- dataSL[indexSL,]
+
+# Combine all of the disease classification training data frames into a
+# single training data data frame
+train <- rbind(trainNO, trainDH, trainSL)
+
+# Create the test data data frames for each disease classification 
+testNO <- dataNO[-indexNO,]
+testDH <- dataDH[-indexDH,]
+testSL <- dataSL[-indexSL,]
+
+# Combine all of the disease classification test data frames into a
+# single verification data data frame
+test <- rbind(testNO, testDH, testSL)
+
+```
+
+``` {r, display-data-splits, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Display the counts of the training, test, and verification data frames
+
+# Summarize the counts of classes contained within the training data frame
+trainSplit <- train %>% group_by(diseaseClassification) %>%
+  summarize(count = n())
+
+# Summarize the counts of classes contained within the test data frame
+testSplit <- test %>% group_by(diseaseClassification) %>%
+  summarize(count = n())
+
+# Summarize the counts of classes contained within the verification data frame
+verificationSplit <- verification %>% group_by(diseaseClassification) %>%
+  summarize(count = n())
+
+### Display the training data frame class counts in a knitr::kable
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(trainSplit,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Training Data Configuration") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+### Display the test data frame class counts in a knitr::kable
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(testSplit,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Test Data Configuration") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+### Display the verification data frame class counts in a knitr::kable
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(verificationSplit,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Verification Data Configuration") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+With the data splitting completed, data exploration and visualization was 
+performed next with the initial goal of testing whether the data splitting 
+method succeeded in producing predictors that follow a normal distribution, and
+therefore are valid to be used in machine learning methods that require 
+normally distributed predictors.  
+
+``` {r, memory-data-management-1, include=FALSE}
+### Environment cleanup for memory management and removing R objects not needed
+
+# Create list of R objects from environment
+objectsR <- objects()
+# Create list of R object to keep in memory
+keep <- c("orthoData", "train", "verification",
+          "test", "startTime")
+# Perform the enviroment object removal
+removeIndex <- !objectsR %in% keep
+removeObjects <- as.list(objectsR[removeIndex])
+do.call(rm, removeObjects)
+rm(removeObjects, keep, objectsR, removeIndex)
+
+# Clean up memory: reduce the chance of a memory issue while running the script
+gc()
+
+```
+
+\newpage
+
+## Data Exploration and Visualization
+
+Data exploration and data visualization are used throughout this project to 
+assist in constructing, improving, and refining models that predict
+Vertebral Column Data patient classes.  More specifically, the model 
+development follows an iterative analysis and visualization process on the 
+training data set.  Ultimately, this process provided the insights that 
+guided the model development and model fitting.
+
+### Training Data Predictor Summary Statistics and Histograms
+
+To begin the data exploration and visualization process, summary statistics and 
+histograms were prepared for each predictor in the training data set. 
+A few of the many reasons why summary statistics and histograms are useful in
+preliminary data analysis is that the distribution, measures of variability, 
+and measures of central tendency (Irizarry, 2022, Chapter 12) can be determined.
+In turn, these statistics and data visualizations can lead to insights that
+drive machine learning method selection, greater understanding of the data,
+and how it can potentially be used.  The following table presents summary 
+statistics of the minimum, first quartile, median,	mean,	third 
+quartile, and	maximum values for each predictor within the training data: 
+
+
+``` {r, summary-pelvic-incidence, echo=FALSE, warning=FALSE, message=FALSE}
+
+################################################################################
+################################################################################
+#                   DATA EXPLORATION AND VISUALIZATION                         #
+################################################################################
+################################################################################
+
+### Create summary statistics and histogram plots for all of the predictors
+### in the Vertebral Column Training Data to be analyzes for being normally
+### distributed and to be used for machine learning algorithm selection
+
+### Pelvic Incidence summary statistics and histogram
+
+# Summary Statistics of pelvicIncidence from training data
+pelvicIncidenceSummmary <- summary(train$pelvicIncidence)
+
+# Create data frame to hold the pelvicIncidence and other predictor
+# summary statistics to display all together later on
+summary_df <- data.frame(Predictor <- NULL,
+                         Minimum = NULL,
+                         FirstQuartile = NULL,
+                         Median = NULL,
+                         Mean = NULL,
+                         ThirdQuartile = NULL,
+                         Maximum = NULL)
+
+# Populate the summary data frame with pelvicIncidence summary statistics
+summary_df[1, "Predictor"] <- "Pelvic Incidence"
+summary_df[1, "Minimum"] <- pelvicIncidenceSummmary[1]
+summary_df[1, "FirstQuartile"] <- pelvicIncidenceSummmary[2]
+summary_df[1, "Median"] <- pelvicIncidenceSummmary[3]
+summary_df[1, "Mean"] <- pelvicIncidenceSummmary[4]
+summary_df[1, "ThirdQuartile"] <- pelvicIncidenceSummmary[5]
+summary_df[1, "Maximum"] <- pelvicIncidenceSummmary[6]
+
+# Create the ggplot piHist object for later display in a cowplot grid
+piHist <- ggplot(train, aes(x=pelvicIncidence)) + 
+  geom_histogram(bins=10, fill="aquamarine3", color = "black", alpha=0.9) +
+  ggtitle("Train Data PI Histogram") +
+  xlab("Pelvic Incidence Values") + 
+  ylab("Frequency")
+
+```
+
+
+``` {r, summary-pelvic-tilt, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Pelvic Tilt summary statistics and histogram
+
+# Summary Statistics of pelvicTilt from training data
+pelvicTiltSummmary <- summary(train$pelvicTilt)
+
+# Populate the summary data frame with pelvicTilt summary statistics
+summary_df[2, "Predictor"] <- "Pelvic Tilt"
+summary_df[2, "Minimum"] <- pelvicTiltSummmary[1]
+summary_df[2, "FirstQuartile"] <- pelvicTiltSummmary[2]
+summary_df[2, "Median"] <- pelvicTiltSummmary[3]
+summary_df[2, "Mean"] <- pelvicTiltSummmary[4]
+summary_df[2, "ThirdQuartile"] <- pelvicTiltSummmary[5]
+summary_df[2, "Maximum"] <- pelvicTiltSummmary[6]
+
+# Create the ggplot ptHist object for later display in a cowplot grid
+ptHist <- ggplot(train, aes(x=pelvicTilt)) + 
+  geom_histogram(bins=10, fill="palevioletred1", color="black", alpha=0.9) +
+  ggtitle("Train Data PT Histogram") +
+  xlab("Pelvic Tilt Values") + 
+  ylab("Frequency")
+
+```
+
+
+``` {r, summary-lumbar-lordosis, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Lumbar Lordosis summary statistics and histogram
+
+# Summary Statistics of lumbarLordosis from training data
+lumbarLordosisSummmary <- summary(train$lumbarLordosis)
+
+# Populate the summary data frame with lumbarLordosis summary statistics
+summary_df[3, "Predictor"] <- "Lumbar Lordosis"
+summary_df[3, "Minimum"] <- lumbarLordosisSummmary[1]
+summary_df[3, "FirstQuartile"] <- lumbarLordosisSummmary[2]
+summary_df[3, "Median"] <- lumbarLordosisSummmary[3]
+summary_df[3, "Mean"] <- lumbarLordosisSummmary[4]
+summary_df[3, "ThirdQuartile"] <- lumbarLordosisSummmary[5]
+summary_df[3, "Maximum"] <- lumbarLordosisSummmary[6]
+
+# Create the ggplot llHist object for later display in a cowplot grid
+llHist <- ggplot(train, aes(x=lumbarLordosis)) + 
+  geom_histogram(bins=10, fill="sienna1", color="black", alpha=0.9) +
+  ggtitle("Train Data LL Histogram") +
+  xlab("Lumbar Lordosis Values") + 
+  ylab("Frequency")
+
+```
+
+``` {r, summary-sacral-slope, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Sacral Slope summary statistics and histogram
+
+# Summary Statistics of sacralSlope from training data
+sacralSlopeSummmary <- summary(train$sacralSlope)
+
+# Populate the summary data frame with lumbarLordosis summary statistics
+summary_df[4, "Predictor"] <- "Sacral Slope"
+summary_df[4, "Minimum"] <- sacralSlopeSummmary[1]
+summary_df[4, "FirstQuartile"] <- sacralSlopeSummmary[2]
+summary_df[4, "Median"] <- sacralSlopeSummmary[3]
+summary_df[4, "Mean"] <- sacralSlopeSummmary[4]
+summary_df[4, "ThirdQuartile"] <- sacralSlopeSummmary[5]
+summary_df[4, "Maximum"] <- sacralSlopeSummmary[6]
+
+# Create the ggplot ssHist object for later display in a cowplot grid
+ssHist <- ggplot(train, aes(x=sacralSlope)) + 
+  geom_histogram(bins=10, fill="sienna1", color="black", alpha=0.9) +
+  ggtitle("Train Data SS Histogram") +
+  xlab("Sacral Slope Values") + 
+  ylab("Frequency")
+
+```
+
+
+``` {r, summary-pelvic-radius, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Pelvic Radius summary statistics and histogram
+
+# Summary Statistics of pelvicRadius from training data
+pelvicRadiusSummmary <- summary(train$pelvicRadius)
+
+# Populate the summary data frame with lumbarLordosis summary statistics
+summary_df[5, "Predictor"] <- "Pelvic Radius"
+summary_df[5, "Minimum"] <- pelvicRadiusSummmary[1]
+summary_df[5, "FirstQuartile"] <- pelvicRadiusSummmary[2]
+summary_df[5, "Median"] <- pelvicRadiusSummmary[3]
+summary_df[5, "Mean"] <- pelvicRadiusSummmary[4]
+summary_df[5, "ThirdQuartile"] <- pelvicRadiusSummmary[5]
+summary_df[5, "Maximum"] <- pelvicRadiusSummmary[6]
+
+# Create the ggplot prHist object for later display in a cowplot grid
+prHist <- ggplot(train, aes(x=pelvicRadius)) + 
+  geom_histogram(bins=10, fill="mediumpurple", color="black", alpha=0.9) +
+  ggtitle("Train Data PR Histogram") +
+  xlab("Pelvic Radius Values") + 
+  ylab("Frequency")
+
+```
+
+``` {r, summary-spondylolisthesis-grade, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Spondylolisthesis Grade summary statistics and histogram
+
+# Summary Statistics of spondylolisthesisGrade from training data
+spondylolisthesisGradeSummmary <- summary(train$spondylolisthesisGrade)
+
+# Populate the summary data frame with lumbarLordosis summary statistics
+summary_df[6, "Predictor"] <- "Spondylolisthesis Grade"
+summary_df[6, "Minimum"] <- spondylolisthesisGradeSummmary[1]
+summary_df[6, "FirstQuartile"] <- spondylolisthesisGradeSummmary[2]
+summary_df[6, "Median"] <- spondylolisthesisGradeSummmary[3]
+summary_df[6, "Mean"] <- spondylolisthesisGradeSummmary[4]
+summary_df[6, "ThirdQuartile"] <- spondylolisthesisGradeSummmary[5]
+summary_df[6, "Maximum"] <- spondylolisthesisGradeSummmary[6]
+
+# Create the ggplot sgHist object for later display in a cowplot grid
+sgHist <- ggplot(train, aes(x=spondylolisthesisGrade)) + 
+  geom_histogram(bins=10, fill="darkcyan", color="black", alpha=0.9) +
+  ggtitle("Train Data SG Histogram") +
+  xlab("Spondylolisthesis Grade Values") + 
+  ylab("Frequency")
+
+```
+
+``` {r, summary-stats-display, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+### Display a combined summary statistics data frame containing the summary 
+### statistics for each of the predictors in the training data; this summary
+### is important to see the relationship between mean and medians which can 
+### be used to identify a skew (non-normal) characteristic of the predictors
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(summary_df,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Summary Statistics of Vertebral Column Data Training Set Predictors") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+To generate the summary statistics presented in the table above, the base R 
+summary function was used.  With the exception of Spondylolisthesis Grade, the
+mean and median are reasonably close for all predictors, which suggests that 
+all predictors but Spondylolisthesis Grade follow a normal distribution. 
+Although the first and third quartiles are provided, which gives an idea of the
+where 75 percent of the data for each predictor in the training data lies, 
+greater insight into the distribution of each predictor was achieved by 
+producing histograms of each predictor as displayed in the following plot grid:
+
+``` {r, histogram-display, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Use the library(cowplot) to combine and create a layout for the histogram
+### plots of each predictor in the training data, vignette Wilke (2022)
+plot_grid(piHist, ptHist, llHist, ssHist, prHist, sgHist, ncol = 2, nrow = 3)
+
+```
+
+The ggplot package was used to generate the histogram objects using 
+geom_histogram with the number of bins set to 10.  The number of bins
+was set to 10 to attain a general idea (not coarse, not fine) of the predictor 
+distribution.  Consistent with the mean and median comparison of the predictors 
+made using the summary statistics, the predictors are appear to follow a normal 
+distribution with some shifts in central tendency, but without any
+substantial skew, except for Spondylolisthesis Grade.  However, a QQ-plot 
+would provide a better visual frame to evaluate the degree of predictor 
+normality.
+
+### Degree of Predictor Normality 
+
+As shown in the predictor histograms derived from the training data,
+with the exception of the Spondylolisthesis Grade, the predictors, overall,
+present with characteristics that would fit a normal curve (Gaussian 
+distribution). However, more insight into the suitability of the predictors to 
+be used in models such as Quadratic Discriminant Analysis (QDA), a method that 
+requires predictors to be bivariate normal, could be gained by assessing
+the degree of normality with at least two independent samples of the data.
+Since QQ-plots are useful for comparing a set of data to the mathematical 
+normal distribution (Irizarry, 2022, Chapter 12), QQ-plots
+of each predictor should provide the normality assessment desired.  The 
+following QQ-plot shows each predictor compared to the mathematical Normal 
+distribution:
+
+``` {r, qqplot-normal, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Create a QQ-Plot of all predictors in the same plot to visualize their
+### relationship to a Normal Distribution.
+
+# Create vector to hold the measures and predictor geometry which will be used
+# to display the qq-plot of the measures and color by geometry type within
+# a single plot
+measureDataNames <- c("Measure", "Geometry")
+
+# Select the Pelvic Incidence measures and create a PI data frame with only the
+# Geometry and Measures for the single QQ-plot showing all predictors
+PI <- train %>% dplyr::select(pelvicIncidence)
+PI <- PI %>% mutate(Geometry = "Pelvic Incidence")
+colnames(PI) <- measureDataNames
+
+# Select the Pelvic Tilt measures and create a PT data frame with only the
+# Geometry and Measures for the single QQ-plot showing all predictors
+PT <- train %>% dplyr::select(pelvicTilt)
+PT <- PT %>% mutate(Geometry = "Pelvic Tilt")
+colnames(PT) <- measureDataNames
+
+# Select the Lumbar Lordosis measures and create a LL data frame with only the
+# Geometry and Measures for the single QQ-plot showning all predictors
+LL <- train %>% dplyr::select(lumbarLordosis)
+LL <- LL %>% mutate(Geometry = "Lumbar Lordosis")
+colnames(LL) <- measureDataNames
+
+# Select the Sacral Slope measures and create a SS data frame with only the
+# Geometry and Measures for the single QQ-plot showing all predictors
+SS <- train %>% dplyr::select(sacralSlope)
+SS <- SS %>% mutate(Geometry = "Sacral Slope")
+colnames(SS) <- measureDataNames
+
+# Select the Pelvic Radius measures and create a PR data frame with only the
+# Geometry and Measures for the single QQ-plot showing all predictors
+PR <- train %>% dplyr::select(pelvicRadius)
+PR <- PR %>% mutate(Geometry = "Pelvic Radius")
+colnames(PR) <- measureDataNames
+
+# Select the Spondylolisthesis Grade measures and create a SG data frame with 
+# only the Geometry and Measures for the single QQ-plot showing all predictors
+SG <- train %>% dplyr::select(spondylolisthesisGrade)
+SG <- SG %>% mutate(Geometry = "Spondylolisthesis Grade")
+colnames(SG) <- measureDataNames
+
+# combine all of the segregated predictor measures and geometry into a 
+# single data frame to plot using ggplot
+measureData <- rbind(PI, PT, LL, SS, PR, SG)
+
+# Create and display the QQ-plot to show the degree of normality
+# of each predictor in the training data set
+ggplot(data = measureData, aes(sample = Measure, color = Geometry)) + 
+  stat_qq() + stat_qq_line() +
+  ggtitle("Training Data Normality Assessment of Predictors Using QQ-Plot") +
+  theme(legend.position="bottom") +
+  guides(color = guide_legend(title = "Predictor"))
+
+
+```
+
+Confirming what the histograms and summary statistics presented, the 
+predictors more or less follow a normal distribution with the exception of 
+Spondylolisthesis Grade.  In assessing the degree of normality for the predictors 
+other than Spondylolisthesis Grade, visually, Pelvic Incidence had the largest
+number of points with the shortest distance to its best fit line, and Pelvic
+Tilt visually has the greatest number of points with the largest distance to
+its best fit line.  Therefore, Pelvic Incidence shows the greatest degree of 
+normality, Pelvic Tilt shows the least degree of normality, and Pelvic Radius, 
+Lumbar Lordosis, and Sacral Slope fall somewhere in between.  Consequently, 
+Pelvic Incidence should have the greatest acceptance from machine learning 
+methods that require normally distributed predictors, and Pelvic Tilt should 
+be the least acceptable.  
+
+Regardless, of the suitability of a predictor for a particular machine 
+learning method, the utility of the predictors within a machine learning method
+depends on their variability (Irizarry, n.d).  Despite being able to discern 
+some variability from the histograms, the base R summary function that was 
+used to provide summary statistic information did not provide an important
+measure of variability: standard deviation.  Therefore, the variability of the
+predictors required further exploration because predictors with high 
+variability often have greater importance and predictive power in machine
+learning, whereas predictors with low variability may provide little 
+information to potentially enhance model performance (Irizarry, n.d).
+
+### Predictor Variability
+
+As stated in the Degree of Normality section, more variability in a predictor 
+implies that the predictor may provide more machine learning utility. 
+Therefore, the following table and plot summarizes the variability of each 
+predictor, so that initial interpretations of predictive power can be assessed:
+
+``` {r, predictor-variability, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Predictor variability data exploration and visualization
+
+# Create an empty data frame as a matrix sized for the predictor train data set
+predictorVariability <- data.frame(matrix(nrow = ncol(train)-1, ncol = 2))
+
+# Provide names based on the number of columns set with the create and 
+# cast matrix to data frame line above
+predictorVariabilityNames <- c("predictor", "standardDeviation")
+colnames(predictorVariability) <- predictorVariabilityNames
+
+# Extract the names of the training data data frame
+predictorNames <- names(train)
+
+# Apply the predictor names from the predictorNames object and the
+# associated standard deviation of the predictor to the predictorVariability
+# data frame which will be used to display a predictor variability table and
+# a predictor variability bar plot to compare the predictor variability
+for(i in 1:ncol(train)-1) {
+  predictorVariability[i, "predictor"] <- predictorNames[i]
+  predictorVariability[i, "standardDeviation"] <- sd(train[,i])
+}
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(predictorVariability,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Variability of Predictors") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+# Quick barplot of the standard deviation of the predictors
+barplot(predictorVariability$standardDeviation,
+        main = "Standard Deviation of Predictors",
+        xlab = "Predictor",
+        ylab = "Standard Deviation",
+        names.arg = c("PI", "PT", "LL", "SS", "PR", "SG"))
+
+
+```
+
+The predictors of Pelvic Incidence, Pelvic Tilt, Lumbar Lordosis, 
+Sacral Slope, and Pelvic Radius have comparable variability.  However,
+as the histogram above shows, Spondylolisthesis Grade on average has 
+nearly twice the variability as all other predictors, which suggests 
+Spondylolisthesis Grade should prove valuable when used in machine 
+learning methods.  Unfortunately, the QQ-plot revealed that Spondylolisthesis
+Grade is not normally distributed, and therefore, only machine learning 
+methods that do not consider predictor distribution or do not require normally
+distributed predictors are valid to use with Spondylolisthesis Grade.
+
+## Modeling Approach and Model Building
+
+The foregoing data splitting and data exploration and visualization sections 
+identified important characteristics and insights attributed to the Vertebral
+Column Data set that can be leveraged to guide the modeling approach and model
+construction.  In summary, those insights are as follows:  
+
+* Although Spondylolisthesis Grade has the most variability out of all  
+predictors, which from a preliminary perspective suggests that it may be one 
+of the most useful predictors, it can be applied only in machine learning
+methods that do not consider the predictor distribution or do not require
+normally distributed predictors, since the QQ-plot revealed Spondylolisthesis
+Grade is not normally distributed.
+
+* Despite attempting to implement a data splitting strategy that 
+mitigates class prevalence bias in the training, test, and verification data,
+a balance was struck between mitigating the degree of bias by sampling the 
+Vertebral Column Data Set instead of using createDataPartition, and using
+all of the patient records to help ensure that the predictors follow a normal 
+distribution, so that machine learning methods were not eliminated from 
+available options due to some method's requirement for normally distributed data.
+
+* Despite the disadvantages of the small size of the data set for producing
+a prediction platform that would generalize well to new data, with such a small
+amount of data, baseline results can be skipped.  Instead, each model can
+immediately be cross-validated on the training data and tested on the test 
+data to assess the models ability to generalize to new data.  In addition, 
+computationally expensive models were not ruled out when selecting models 
+to train, cross-validate, test, and verify because the time and computing power
+required should be minimal given the small data set size. 
+
+Based on the foregoing insights, characteristics of an ideal 
+model for the Vertebral Column Data Set includes models that do not consider 
+predictor distribution, and models that can accommodate for the class prevalence 
+bias that is presumed to be inherent within the Vertebral Column Data Set 
+and transferred to the training, test, and validation data sets.
+
+Fortunately, the caret package contains a large number of supervised 
+classification machine learning methods to choose from.  In addition, the caret
+package makes working with the packages easy due to standardized function 
+calls (Kuhn, 2019).  Overall, the models selected to predicted patient 
+classifications were determined from exposure to models from Irizarry's 
+machine learning course (n.d.), the documentation provided in the caret 
+repository (Kuhn, 2019), and the insights obtained from the data splitting
+and data exploration and data visualization sections.  Based on this 
+information, Quadratic Discriminant Analysis (QDA), Random Forest, and 
+K-Nearest Neighbor (KNN) methods were chosen to generate cross-validated 
+predictions of patient class while using suitable predictors for each method.
+
+\newpage
+
+### Quadratic Discriminant Analysis
+
+Before starting the prediction process with QDA, which is a version of Naive 
+Bayes where the predictors are assumed to be multivariate normal
+(Irizarry, 2022, Chapter 31), the data splitting was performed multiple times 
+by re-running the computation script without setting a seed value, so the split
+data was randomly sampled.  Although the results of script re-runs are not 
+shown here, by randomly sampling the Vertebral Column data 
+multiple times to generate variations of the training data and analyzing the 
+summary statistics, histograms, and QQ-plots for the predictors, the predictors 
+with the exception of Spondylolisthesis Grade were determined to be 
+multivariate normal.  In addition, seeing that class prevalence bias is 
+expected within the training data due to unequal distribution of patient 
+classifications, QDA was an attractive method because Naive Bayes controls
+for prevalence (Irizarry, 2022, Chapter 31).  The table and histogram
+below provide a reminder of the class prevalence within the training data set:
+
+
+``` {r, classification-prevalence, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Show the class prevalence of the train data classes based on the counts
+### of each class
+
+# Create class prevalence data frame the summarizes the counts of each 
+# training data class
+classificationPrevalence <- train %>% group_by(diseaseClassification) %>%
+  summarize(count = n())
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(classificationPrevalence,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Training Data Class Prevalence") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+# Quick barplot of the Disease Prevalence in the training data
+barplot(classificationPrevalence$count,
+        main = "Training Data Class Prevalence",
+        xlab = "Disease",
+        ylab = "Count",
+        names.arg = c(classificationPrevalence$diseaseClassification))
+
+
+```
+
+\newpage
+
+Considering the small size of the training data set, the potential to over fit 
+the model was also assessed.  The following formula was used to determine the 
+estimated number of parameters required for the QDA solution, which was used to 
+understand the over fitting risk:
+
+\[Parameters = K \left[\frac{2p + p(p-1)}{2}\right]\]
+
+where, 
+
+\[K = the \: number \: of \: classes\]
+\[p = the \: number \: of \: predictors\]
+
+(Irizarry, n.d.)
+
+To assess the prospect of over fitting, the closer the number of parameters 
+is to the size of the data set, the higher the risk of over fitting, which is 
+also know as the curse of dimensionality; as the number of parameters increases
+and approaches the number of data set records, the utility of the method
+declines (Irizarry, 2022, Chapter 31).
+
+For the Vertebral Column Data Set, the following table shows the estimated 
+number of computed parameters required for QDA to operate with three 
+classes of DH, SL, and NO, and using a range of predictors sequentially added to
+the model, which include, Pelvic Incidence, Pelvic Tilt, Lumbar Lordosis, 
+Sacral Slope, and Pelvic Radius:
+
+``` {r, qda-parameters, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Estimate the parameters required to run the QDA machine learning method
+### These estimates are create based on the number of classes within the
+### Vertebral Column Data set and the number of predictors to be included
+### for training a QDA model.  Results are then used to determine if enough
+### degree of freedom remains so the model does not over fit
+
+# Create a vector to hold the number of predictors to estimate parameters
+predictorsUsed <- 1:5
+
+# Set the value of K to hold the number of classes within the Vertebral
+# Column Data Set
+K <- nrow(classificationPrevalence)
+
+# Create an empty data frame cast from a matrix to hold the number of 
+# compute parameters estimated to run QDA
+parametersRequired <- data.frame(matrix(nrow = length(predictorsUsed), ncol = 3))
+parametersRequiredNames <- c("predictorsUsed", "classesK", "parametersRequired")
+colnames(parametersRequired) <- parametersRequiredNames
+
+# Make the estimated required parameters for each class and number of predictors
+# combination and store the results to the parameters required data frame
+for(i in 1:nrow(parametersRequired)) {
+  parametersRequired[i, "predictorsUsed"] <- predictorsUsed[i]
+  parametersRequired[i, "classesK"] <- K
+  parametersRequired[i, "parametersRequired"] <- K*((2*predictorsUsed[i] + predictorsUsed[i]*(predictorsUsed[i]-1))/2)
+}
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(parametersRequired,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Estimated QDA Parameter Requirements") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+From the table above, if all predictors represented by bivariate normal data 
+are used in the QDA model, an estimated 45 parameters are required.  Since there 
+are `r nrow(train)` observations, there is still plenty of freedom left within
+the training data set, so over fitting was not expected be a problem.
+Therefore, QDA was applied to the training data using 5-fold cross-validation
+and the following five bivariate normal predictors: Pelvic Incidence, 
+Pelvic Tilt, Lumbar Lordosis, Sacral Slope, and Pelvic Radius.
+
+
+``` {r, apply-qda, echo=FALSE, warning=FALSE, message=FALSE}
+
+### QDA Fitting and Accuracy Generation from Confusion Matrix Output
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+train_qda <- train(diseaseClassification ~ pelvicIncidence 
+                   + pelvicTilt
+                   + lumbarLordosis
+                   + sacralSlope
+                   + pelvicRadius,
+                   method = "qda",
+                   trControl = trainControl(method = "cv", number = 5),
+                   data = train)
+
+# Create object to hold the confuction matrix accuracy from cross-validation
+qdaAccuracy <- confusionMatrix(predict(train_qda, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+```
+
+In the context of patient classification, the accuracy of `r round(qdaAccuracy,3)` 
+achieved by QDA left room for improvement.  Perhaps, because Pelvic 
+Incidence is a function of Pelvic Tilt and Sacral Slope, as noted in the data 
+cleaning section, where $PI = PT + SS$, duplicate information may not be
+providing a performance boost, or those predictors simply could have very 
+little impact to the accuracy of the QDA solution.  To explore whether Pelvic 
+Incidence, Pelvic Tilt and Sacral Slope had importance in patient class 
+predictions (along with the other predictors in the Vertebral Column Data Set),
+the variable importance feature of the Random Forest method presented the 
+opportunity to quantify predictor classification value. 
+
+### Random Forest
+
+Besides providing insight regarding the importance of predictors and being
+a method that is an extension of decision trees that elegantly escapes the curse
+of dimensionality that QDA is subject to (Irizarry, 2022, Chapter 31), the 
+decision trees associated with Random Forests are also useful in medical 
+diagnostics.  According to Podgorelec et al. (2002), decision trees can be 
+reliable, effective, and accurate in medical decision making.  With the 
+premise of escaping the curse of dimensionality and the relevance of decision 
+trees in medical decision making, Random Forest was implemented using all of 
+the predictors available and five-fold cross-validation to provide an accuracy
+comparative to QDA, and to gain insight into the predictors that provide 
+the most and least utility. 
+
+``` {r, apply-random-forest, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Random Forest Fitting and Accuracy Generation from Confusion Matrix Output
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+train_rf <- train(diseaseClassification ~ .,
+                   method = "rf",
+                   trControl = trainControl(method = "cv", number = 5),
+                   data = train)
+
+# Create variable importance object to be used to summarize the predictor utility
+rfImportance <- varImp(train_rf)
+
+# Create object to hold the confuction matrix accuracy from cross-validation
+rfAccuracy <- confusionMatrix(predict(train_rf, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+
+```
+
+The Random Forest method improved the accuracy of the model from 
+`r round(qdaAccuracy,3)` to `r round(rfAccuracy,3)`, and as expected, provided 
+insight into the importance of the predictors.  A summary of the variable 
+importance generated from the Random Forest method is shown in the bar plot 
+and table below:
+
+
+``` {r, variable-importance-random-forest-1, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Ready and display the variable importance information obtained from Random 
+### Forest 5-fold cross validation fitting 
+
+# Cast the variable importance generated by the Random Forest helper function
+# to a data frame that can be displayed
+rfImportanceDF <- as.data.frame(rfImportance$importance)
+
+# Extract row names from the cast list to data frame
+rfImportanceRNames <- rownames(rfImportanceDF)
+
+# Add the row names back into the `rfImportanceDF` as a new column called
+# `Predictor`
+rfImportanceDF <- rfImportanceDF %>% mutate(Predictor = rfImportanceRNames)
+
+# Rearrange the order of the data frame so the most important predictor first
+rfImportanceDF <- arrange(rfImportanceDF, desc(Overall))
+
+# Swap the columns of the `rfImportanceDF` so the `Predictor` column is first
+rfImportanceDF <- rfImportanceDF %>% dplyr::select(Predictor, Overall)
+
+# Quick barplot of the variable importance of the predictors
+barplot(rfImportanceDF$Overall,
+        main = "Importance of Predictors Generated from Random Forest",
+        xlab = "Predictor",
+        ylab = "Percent Importance",
+        names.arg = c("SL", "SS", "PR", "PI", "PT", "LL"))
+
+
+
+
+
+```
+
+\newpage
+
+``` {r, variable-importance-random-forest-2, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Display the Random Forest variable importance generated from the 
+### Random Forest 5-fold cross-validation fitting
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(rfImportanceDF,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Random Forest Variable Importance") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+
+Not surprising, Spondylolisthesis Grade presents with overwhelming importance
+compared to the other predictors.  However, the substantial importance may 
+simply be due to the class prevalence bias within the training data set, or it
+may be legitimate since Spondylolisthesis Grade had, on average, twice the 
+variability of any other predictor, which implies its ability to provide useful
+classification information.  To confirm, the importance of Spondylolisthesis 
+Grade could be verified as over-valued if data sets with different class 
+prevalence were used to compare variable importance results.
+
+Nevertheless, Random Forest and the standard deviation comparison in the
+Predictor Variability section did show that Spondylolisthesis Grade is an 
+important predictor.  Therefore, since Spondylolisthesis Grade was identified
+as an important predictor and QDA was not able to take advantage of 
+Spondylolisthesis Grade because the predictor does not meet QDA's 
+requirement of being bivariate normal, K-Nearest Neighbors was 
+implemented next as a comparative to Random Forest because KNN is a 
+non-parametric classifier, which means KNN does not consider predictor
+distribution (Speck, 2017).
+
+### K-Nearest Neighbors
+
+Despite KNN being immune from having to rely on data following a specific 
+distribution, KNN comes with its own challenges.  First of all, a major 
+challenge with KNN (as with QDA), is the curse of dimensionality (Speck, 
+2017; Irizarry, 2022, Chapter 31).  Fortunately, the variable importance derived 
+from the five fold cross-validated Random Forest model helped identify 
+predictors that should add value to the KNN solution.  Based on predictor 
+importance being predetermined, overcoming potential over fitting using KNN
+was protected against by using the most important predictor first, and 
+then adding the next most important predictor, and so on.  With this approach, 
+the anticipated outcome was to find a balance between avoiding over fitting 
+and optimizing the KNN method, where each KNN model added the next
+most important predictor, was cross-validated, and the smoothing window (K) was 
+tuned.
+
+Before the models could be assessed, a metric to compare the various KNN models
+was needed.  Assessing the fit was selected because fit can be evaluated as 
+over, under, or best.  Models that are over fit and under fit can be identified
+by comparing the test accuracy of various models and individual model training
+and test accuracy in conjunction with model complexity (Dalpaiz, 2020; Dalpaiz, 
+2022).  In general, a  model is over fit when the test accuracy is less than 
+the train accuracy; a model is under fit when the test accuracy is greater 
+than the train accuracy, yet, not the best performing model; and the best 
+fit model has a test accuracy that is greater than the train accuracy while 
+being the least complex out of all under trained models (Dalpaiz, 2020; Dalpaiz,
+2022).
+
+The following plot shows the cross-validation and tuning process for a variety 
+of smoothing values (K) used during the KNN model building process of adding
+the next most important predictor per iteration.  In addition, the following 
+table summarizes the predictors used; the best tune for K; the accuracy attained
+for the training data and test data; and a fit result of over, under, or 
+best:
+
+
+``` {r, knn, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Note the KNN training, predicting, and accuracy assessment for an
+# increasing number of predictors could have been coded with a function
+# to reduce the amount of duplicated code.  However, the marking rubric
+# requests code that "runs easily, [and] is easy to follow".  For that
+# reason, the code is written in script form instead of making use of
+# only simple functions
+
+# Create data frame to hold the results of the KNN method with the predictors
+# listed in their order of Importance and whether they were included in the 
+# computation for KNN and their variable importance value
+knnResults <- data.frame(matrix(nrow = 0, ncol = nrow(rfImportanceDF)))
+colnames(knnResults) <- rownames(rfImportanceDF)
+
+# Set neighborhood value for all of predictor increments going from 1 to 40
+# Intitially tested with more values to see where the accuracy peaked and
+# where the accuracy dropped off to get the range to use in practice
+grid = expand.grid(k = c(1:40))
+
+# set seed for consistent results
+set.seed(1, sample.kind = "Rounding")
+
+##################################  SG Only ####################################
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+
+# Train, Predict, Summarize Accuracy for spondylolisthesisGrade
+# (no cross-validation or tuning at this stage -- getting baseline results)
+train_knn_1 <- train(diseaseClassification ~ spondylolisthesisGrade,
+                   method = "knn",
+                   data = train,
+                   trControl = trainControl(method = "cv", number = 5),
+                   tuneGrid=grid)
+
+# Create object to hold the confusion matrix accuracy from cross-validation
+knnAccuracy_1 <- confusionMatrix(predict(train_knn_1, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+# Write the KNN model parameters to the knnResults data frame along with 
+# the accuracy for the test and training data sets to assess the 
+# fit as over, under, or best later on
+knnResults[1, "ID"] <- 1
+knnResults[1, "spondylolisthesisGrade"] <- "Applied"
+knnResults[1, "pelvicIncidence"] <- NA
+knnResults[1, "pelvicRadius"] <- NA
+knnResults[1, "sacralSlope"] <- NA
+knnResults[1, "lumbarLordosis"] <- NA
+knnResults[1, "pelvicTilt"] <- NA
+knnResults[1, "K"] <- train_knn_1$bestTune$k
+knnResults[1, "TrainAccuracy"] <- train_knn_1$results$Accuracy[train_knn_1$bestTune$k]
+knnResults[1, "TestAccuracy"] <- knnAccuracy_1
+knnResults[1, "Fit"] <- ifelse(knnResults[1, "TrainAccuracy"] < knnResults[1, "TestAccuracy"],
+                               "Under", "Over")
+
+
+
+
+##################################  SG + SS ####################################
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+
+# Train, Predict, Summarize Accuracy for spondylolisthesisGrade + pelvicIncidence
+# (no cross-validation or tuning at this stage -- getting baseline results)
+train_knn_2 <- train(diseaseClassification ~ spondylolisthesisGrade
+                   + sacralSlope,
+                   method = "knn",
+                   data = train,
+                   trControl = trainControl(method = "cv", number = 5),
+                   tuneGrid=grid)
+
+# Create object to hold the confusion matrix accuracy from cross-validation
+knnAccuracy_2 <- confusionMatrix(predict(train_knn_2, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+# Write the KNN model parameters to the knnResults data frame along with 
+# the accuracy for the test and training data sets to assess the 
+# fit as over, under, or best later on
+knnResults[2, "ID"] <- 2
+knnResults[2, "spondylolisthesisGrade"] <- "Applied"
+knnResults[2, "pelvicIncidence"] <- NA
+knnResults[2, "pelvicRadius"] <- NA
+knnResults[2, "sacralSlope"] <- "Applied"
+knnResults[2, "lumbarLordosis"] <- NA
+knnResults[2, "pelvicTilt"] <- NA
+knnResults[2, "K"] <- train_knn_2$bestTune$k
+knnResults[2, "TrainAccuracy"] <- train_knn_2$results$Accuracy[train_knn_2$bestTune$k]
+knnResults[2, "TestAccuracy"] <- knnAccuracy_2
+knnResults[2, "Fit"] <- ifelse(knnResults[2, "TrainAccuracy"] < knnResults[2, "TestAccuracy"],
+                               "Under", "Over")
+
+#############################  SG + SS + PR ####################################
+
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+
+# Train, Predict, Summarize Accuracy for spondylolisthesisGrade + pelvicIncidence
+# (no cross-validation or tuning at this stage -- getting baseline results)
+train_knn_3 <- train(diseaseClassification ~ spondylolisthesisGrade
+                   + sacralSlope
+                   + pelvicRadius,
+                   method = "knn",
+                   data = train,
+                   trControl = trainControl(method = "cv", number = 5),
+                   tuneGrid=grid)
+
+# Create object to hold the confusion matrix accuracy from cross-validation
+knnAccuracy_3 <- confusionMatrix(predict(train_knn_3, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+# Write the KNN model parameters to the knnResults data frame along with 
+# the accuracy for the test and training data sets to assess the 
+# fit as over, under, or best later on
+knnResults[3, "ID"] <- 3
+knnResults[3, "spondylolisthesisGrade"] <- "Applied"
+knnResults[3, "pelvicIncidence"] <- NA
+knnResults[3, "pelvicRadius"] <- "Applied"
+knnResults[3, "sacralSlope"] <- "Applied"
+knnResults[3, "lumbarLordosis"] <- NA
+knnResults[3, "pelvicTilt"] <- NA
+knnResults[3, "K"] <- train_knn_3$bestTune$k
+knnResults[3, "TrainAccuracy"] <- train_knn_3$results$Accuracy[train_knn_3$bestTune$k]
+knnResults[3, "TestAccuracy"] <- knnAccuracy_3
+knnResults[3, "Fit"] <- ifelse(knnResults[3, "TrainAccuracy"] < knnResults[3, "TestAccuracy"],
+                               "Under", "Over")
+
+
+#############################  SG + SS + PR + PI ################################
+
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+
+# Train, Predict, Summarize Accuracy for spondylolisthesisGrade + pelvicIncidence
+# (no cross-validation or tuning at this stage -- getting baseline results)
+train_knn_4 <- train(diseaseClassification ~ spondylolisthesisGrade
+                   + sacralSlope
+                   + pelvicRadius
+                   + pelvicIncidence,
+                   method = "knn",
+                   data = train,
+                   trControl = trainControl(method = "cv", number = 5),
+                   tuneGrid=grid)
+
+# Create object to hold the confusion matrix accuracy from cross-validation
+knnAccuracy_4 <- confusionMatrix(predict(train_knn_4, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+# Write the KNN model parameters to the knnResults data frame along with 
+# the accuracy for the test and training data sets to assess the 
+# fit as over, under, or best later on
+knnResults[4, "ID"] <- 4
+knnResults[4, "spondylolisthesisGrade"] <- "Applied"
+knnResults[4, "pelvicIncidence"] <- "Applied"
+knnResults[4, "pelvicRadius"] <- "Applied"
+knnResults[4, "sacralSlope"] <- "Applied"
+knnResults[4, "lumbarLordosis"] <- NA
+knnResults[4, "pelvicTilt"] <- NA
+knnResults[4, "K"] <- train_knn_4$bestTune$k
+knnResults[4, "TrainAccuracy"] <- train_knn_4$results$Accuracy[train_knn_4$bestTune$k]
+knnResults[4, "TestAccuracy"] <- knnAccuracy_4
+knnResults[4, "Fit"] <- ifelse(knnResults[4, "TrainAccuracy"] < knnResults[4, "TestAccuracy"],
+                               "Under", "Over")
+
+#######################  SG + SS + PR + PI + PT ################################
+
+
+# Vignette on cross validation (Dalpaiz, 2020, Chapter 21)
+# perform the cross validation on the training set with 5 folds 
+
+# Train, Predict, Summarize Accuracy for spondylolisthesisGrade + pelvicIncidence
+# (no cross-validation or tuning at this stage -- getting baseline results)
+train_knn_5 <- train(diseaseClassification ~ spondylolisthesisGrade
+                   + sacralSlope
+                   + pelvicRadius
+                   + pelvicIncidence
+                   + pelvicTilt,
+                   method = "knn",
+                   data = train,
+                   trControl = trainControl(method = "cv", number = 5),
+                   tuneGrid=grid)
+
+# Create object to hold the confusion matrix accuracy from cross-validation
+knnAccuracy_5 <- confusionMatrix(predict(train_knn_5, test),
+                factor(test$diseaseClassification))$overall["Accuracy"]
+
+# Write the KNN model parameters to the knnResults data frame along with 
+# the accuracy for the test and training data sets to assess the 
+# fit as over, under, or best later on
+knnResults[5, "ID"] <- 5
+knnResults[5, "spondylolisthesisGrade"] <- "Applied"
+knnResults[5, "pelvicIncidence"] <- "Applied"
+knnResults[5, "pelvicRadius"] <- "Applied"
+knnResults[5, "sacralSlope"] <- "Applied"
+knnResults[5, "lumbarLordosis"] <- NA
+knnResults[5, "pelvicTilt"] <- "Applied"
+knnResults[5, "K"] <- train_knn_5$bestTune$k
+knnResults[5, "TrainAccuracy"] <- train_knn_5$results$Accuracy[train_knn_5$bestTune$k]
+knnResults[5, "TestAccuracy"] <- knnAccuracy_5
+knnResults[5, "Fit"] <- ifelse(knnResults[5, "TrainAccuracy"] < knnResults[5, "TestAccuracy"],
+                               "Under", "Over")
+
+
+# Extract the training results (bestTrain) for each knn model (additive most
+# important predictor next) method into separate data frames and add
+# a new column to hold the predictors used in that model to the data frame
+knnOnePred <- train_knn_1$results %>% mutate(Predictors = "SG")
+knnTwoPred <- train_knn_2$results %>% mutate(Predictors = "SG + SS")
+knnThreePred <- train_knn_3$results %>% mutate(Predictors = "SG + SS + PR")
+knnFourPred <- train_knn_4$results %>% mutate(Predictors = "SG + SS + PR + PI")
+knnFivePred <- train_knn_5$results %>% mutate(Predictors = "SG + SS + PR + PI + PT")
+
+# Combine all of the results into a single data frame where the predictors
+# can be passed to the color aesthetic within ggplot to show all of the
+# methods colorized in a single plot so they can be visualized and compared
+knnResultsCombined <- rbind(knnOnePred, 
+                           knnTwoPred,
+                           knnThreePred,
+                           knnFourPred,
+                           knnFivePred)
+
+# Plot the knnResultsCombined data frame colorizing each knn method as described
+# above when combining the results of the methods
+ggplot(data = knnResultsCombined, aes(x = k, y = Accuracy, color = Predictors)) + 
+  geom_point() + geom_line() +
+  ggtitle("KNN Iterative Predictor Addition, Cross-Validation, and Tuning") +
+  xlab("K") +
+  ylab("Accuracy") + 
+  theme(legend.position="bottom")
+
+### Determine the best KNN solution based on the criteria from 
+### Dalpaiz (2022, Chapter 7): Best performance and least complex where the
+### results from the test are better than the results from the training
+
+knnBest <- knnResults %>% filter(Fit == "Under") %>%
+  filter(TestAccuracy == max(TestAccuracy))
+
+# Replace "Under" with "Best" in the `knnResults` data frame
+knnResults[knnBest$ID, "Fit"] <- "Best"
+
+### Reformat the `knnResults` data frame for plotting on the pdf page size
+
+# Remove ID
+knnResults <- subset(knnResults, select = -c(ID))
+
+# Change column names to abbreviations to display within the train pdf page
+knnResultsNames <- c("SG", "SS", "PR", "PI", "PT", "LL", "K", "Train Accuracy",
+                     "Test Accuracy", "Fit")
+
+colnames(knnResults) <- knnResultsNames
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(knnResults,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "KNN Iterative Predictor Addition, Cross-Validation, Tuning and Fit") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+```
+
+Based on the foregoing definitions of fit, the best performing KNN model used
+predictors of Spondylolisthesis Grade (SG), Sacral Slope (SS), Pelvic Radius 
+(PR), Pelvic Incidence (PI), and Pelvic Tilt (PT), but did not use Lumbar 
+Lordosis, since the Random Forest variable importance reported Lumbar Lordosis
+to have zero contribution.  Going forward, this best performing KNN model will
+be referred to as the KNN-5 model.
+  
+\newpage
+  
+# Results
+
+Often in supervised machine learning classification, accuracy can be used as a
+general approach to access model performance, but it can be deceptive, 
+particularly when some classes have greater prevalence than others 
+(Irizarry, n.d.).  Instead, a confusion matrix provides substantial information 
+in grid form that can be used to assess solution performance.  To better 
+understand confusion matrices, the following image and definitions are provided.
+
+**Confusion Matrix and Parameter Definitions** 
+
+``` {r, confusion-matrix-table, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+################################################################################
+################################################################################
+#                                 RESULTS                                      #
+################################################################################
+################################################################################
+
+### Create a descriptive model of a confusion matrix based on the 
+### confusion matrix model provided by Irizarry (2022, Chapter 27)
+
+# Create the empty confusion matrix descriptive data frame to show as a table
+cmTable <- data.frame()
+
+# Populate the confusion matrix descriptive data frame to show as a table
+cmTable[1, "Actually Positive"] <- "True Positive (TP)"
+cmTable[1, "Actually Negative"] <- "False Positive (FP)"
+cmTable[2, "Actually Positive"] <- "False Negative (FN)"
+cmTable[2, "Actually Negative"] <- "True Negative (TN)"
+
+# Apply the rownames to the confusion matrix data frame to show as a table
+rownames(cmTable) <- c("Predicted Positive", "Predicted Negative")
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(cmTable,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = TRUE,
+             caption = "Confusion Matrix") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+```
+
+(Irizarry, 2022, Chapter 27)
+
+**True Positive (TP)** 
+
+Occurs when a positive sample is classified correctly as a positive (Kundu, 2023).
+
+**True Negative (TN)** 
+
+Occurs when a negative sample is classified correctly as a negative (Kundu, 2023). 
+
+**False Positive (FP)** 
+
+Occurs when a negative sample is classified incorrectly as a positive (Kundu, 2023). 
+
+**False Negative (FN)** 
+
+Occurs when a positive sample is classified incorrectly as a negative (Kundu, 2023).
+
+In addition, confusion matrix parameters can be used to compute other 
+performance measures (Dalpaiz, 2022, Chapter 17).  Of these available metrics,
+the following measures have been selected based on their connection to 
+overall model performance, relevance for data sets that have class prevalence 
+bias, and meaning to the medical field in terms of the cost of errors
+(Irizarry, n.d.).  
+
+**Accuracy**
+
+The proportion between correct classifications and total classifications (Irizarry, n.d.): 
+
+\[Accuracy = \frac{TP + TN} {TP+FN+FP+TN}\]
+
+(Olugbenga, 2023)
+
+As noted previously, accuracy can be deceptive, particularly when 
+some classes have greater prevalence than others (Irizarry, n.d.).  For 
+instance, in a binary classification where one class represents 90 percent of 
+the observations, with random guessing an imbalance in accuracy between the 
+two classes occurs simply because there is more of one class and less of 
+another (Irizarry, n.d.), which makes accuracy misleading for model to model 
+comparison and assessment.  Fortunately, other metrics derived from confusion 
+matrix values are not clouded by class prevalence, such as studying sensitivity 
+and specificity individually, using balanced accuracy, or using F1-Score 
+(Irizarry, n.d.).
+
+**Sensitivity**
+
+The algorithms ability to make a positive prediction when the true value is
+positive; in other words $\hat Y = True \:, when \: Y = True$,
+which is also known as the True Positive Rate (TPR), or Recall (Irizarry, n.d.):
+
+\[Sensitivity = \frac{TP} {TP+FN}\]
+
+(Irizarry, n.d.)
+
+**Specificity**
+
+The algorithms ability to make a negative prediction when the true value is 
+negative; in other words $\hat Y = False \:, when \: Y = False$, and is also
+known as the True Negative Rate (TNR) (Irizarry, n.d.):
+
+\[Specificity = \frac{TN} {TN + FP}\]
+
+(Irizarry, n.d.)
+
+Sensitivity and specificity are particularly important to evaluate individually
+in the context of the cost of error in medicine.  For example, failing to 
+diagnose cancer when cancer is present (poor sensitivity) could result in end 
+of life, whereas diagnosing cancer when cancer is not present (poor specificity)
+is not ideal due to the side effects of chemotherapy drugs used in cancer 
+treatment, but the consequence is less costly than poor sensitivity, which
+could result in death. 
+
+**Precision**
+
+The ratio of positive predictions derived from the positive class, also known
+as the Positive Predictive Value (PPV), which is the accuracy of the True
+Positive (TP) (Olugbenga, 2023).  
+
+\[Precision = \frac{TP} {TP + FP}\]
+
+(Irizarry, n.d.)
+
+An important note about precision is its relationship to prevalence.  Because
+precision depends on prevalence, higher precision can be achieved even when
+guessing (Irizarry, n.d.).
+
+\newpage
+
+**Balanced Accuracy**
+
+The mean of sensitivity and specificity (Irizarry, n.d.):
+
+\[Balanced Accuracy = \frac{Sensitivity + Specificity}{2}\]
+
+(Irizarry, n.d.)
+
+Balanced Accuracy is particularly useful when there is class prevalence
+imbalance within the data set (Olugbenga, 2023).
+
+
+**F1-Score**
+
+The harmonic mean of precision and recall (Irizarry, n.d.):
+
+\[F1 = \frac {1} {\frac{1}{2}(\frac{1}{Recall}+\frac{1}{Precision})}\]
+
+(Irizarry, n.d.)
+
+In addition to F1-Score being useful when a class prevalence imbalance exists 
+within a data set (Olugbenga, 2023), it can also be used to independently weight 
+precision and recall (Irizarry, n.d.).  In doing so, precision and recall
+can be weighted to better the apportion the cost of error given a specific use
+case (cancer diagnosis example provided previously), which ultimately allows 
+for superior algorithm performance comparisons, and building a framework to 
+determine when an algorithm is ready to be deployed.
+
+With the applicable metrics for supervised machine learning classification
+defined along with their use, the analysis of the results for QDA, 
+Random Forest, and KNN was ready to proceed.  
+
+## Model Performance Comparisons
+
+Based on the expected class prevalence bias in the data and the implications 
+of incorrect classifications in medicine, accuracy alone is not enough to 
+determine the best performing model.  Yet, accuracy does have value because of 
+its ability to provide a general performance assessment, and the ability to 
+reveal whether a model over fits, under fits, or is the best fit when applied
+to new data.  The following table shows the results of applying the same fit 
+assessment methodology used in the Modeling Approach and Model Building section 
+that was applied to the various KNN models, which is based on the fit criteria 
+established by Dalpaiz (2020; 2021): 
+
+``` {r, verification, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Prediction accuracy results for verification data used to assess 
+### the fit of a model as over, under, or best
+
+# Compute the accuracy of the cross-validated QDA training model on the 
+# verification data set
+qdaAccuracy_verification <- confusionMatrix(predict(train_qda, verification),
+                factor(verification$diseaseClassification))$overall["Accuracy"]
+
+# Compute the accuracy of the cross-validated KNN-5 training model on the 
+# verification data set
+knnAccuracy_5_verification <- confusionMatrix(predict(train_knn_5, verification),
+                factor(verification$diseaseClassification))$overall["Accuracy"]
+
+# Compute the accuracy of the cross-validated Random Forest training model on the 
+# verification data set
+rfAccuracy_verification <- confusionMatrix(predict(train_rf, verification),
+                factor(verification$diseaseClassification))$overall["Accuracy"]
+
+### Summarize the test accuracy for the cross-validated models and the 
+### verification accuracy in a table
+
+# Create the data frame to holde the verification accuracy results
+accuracySummary <- data.frame()
+
+# Populated the data frame with the QDA verification accuracy and test
+# accuracy to be used to determine the models fit assessment established by 
+# Dalpaiz (2020; 2021)
+accuracySummary[1, "ID"] <- 1
+accuracySummary[1, "Method"] <- "QDA"
+accuracySummary[1, "TestAccuracy"] <- qdaAccuracy
+accuracySummary[1, "VerificationAccuracy"] <- qdaAccuracy_verification
+accuracySummary[1, "Fit"] <- ifelse(accuracySummary[1, "VerificationAccuracy"] 
+                                    > accuracySummary[1, "TestAccuracy"], 
+                                    "Under", "Over")
+
+# Populated the data frame with the KNN-5 verification accuracy and test
+# accuracy to be used to determine the models fit assessment established by 
+# Dalpaiz (2020; 2021)
+accuracySummary[2, "ID"] <- 2
+accuracySummary[2, "Method"] <- "KNN-5"
+accuracySummary[2, "TestAccuracy"] <- knnAccuracy_5
+accuracySummary[2, "VerificationAccuracy"] <- knnAccuracy_5_verification
+accuracySummary[2, "Fit"] <- ifelse(accuracySummary[2, "VerificationAccuracy"] 
+                                    > accuracySummary[2, "TestAccuracy"], 
+                                    "Under", "Over")
+
+
+# Populated the data frame with the Random Forest verification accuracy and test
+# accuracy to be used to determine the models fit assessment established by 
+# Dalpaiz (2020; 2021)
+accuracySummary[3, "ID"] <- 3
+accuracySummary[3, "Method"] <- "Random Forest"
+accuracySummary[3, "TestAccuracy"] <- rfAccuracy
+accuracySummary[3, "VerificationAccuracy"] <- rfAccuracy_verification
+accuracySummary[3, "Fit"] <- ifelse(accuracySummary[3, "VerificationAccuracy"] 
+                                    > accuracySummary[3, "TestAccuracy"], 
+                                    "Under", "Over")
+
+### Determine the best solution based on the criteria from 
+### Dalpaiz (2022, Chapter 7): Best performance and least complex where the
+### results from the test are better than the results from the training
+
+Best <- accuracySummary %>% filter(Fit == "Under") %>%
+  filter(VerificationAccuracy == max(VerificationAccuracy))
+
+# Replace "Under" with "Best" in the `accuracySummary` data frame
+accuracySummary[Best$ID, "Fit"] <- "Best"
+
+### Reformat the `accuracySummary` data frame for display as a table within
+### the knit pdf document
+
+# Remove ID
+accuracySummary <- subset(accuracySummary, select = -c(ID))
+# Change the names of the columns
+accuracySummaryNames <- c("Method", "Test Accuracy", "Verification Accuracy",
+                          "Fit")
+colnames(accuracySummary) <- accuracySummaryNames
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(accuracySummary,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Verification Data Fit Assesment Based on Model Accuracy") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+
+```
+
+Surprising or not, the KNN-5 model appears to be susceptible to the curse of
+dimesionality as the KNN-5 model over fit the verification data.  Perhaps not 
+surprising, Random Forest performed well because decision trees are 
+unaffected by the curse of dimensionality, and as described by Podgorelec et 
+al. (2002) can be a reliable method in medicine for diagnosis.  Furthermore, 
+since Random Forest was implemented over other decision tree methods such as 
+rpart, the solution also escaped the pitfalls of over fitting that decision 
+tree packages are susceptible to, but that Random Forest is not 
+(Irizarry, n.d.). Overall, because KNN-5 over fit the verification data, and 
+therefore, renders the model unreliable for the application to new data, the 
+confusion matrix derived performance metrics identified as useful given the 
+context and project goal will not be discussed for the KNN-5 model.  Instead, 
+the results of QDA and Random Forest became the focus of the results analysis 
+because both solutions did not over fit.
+
+Although Random Forest outperformed QDA when considering accuracy only, 
+sensitivity, specificity, balanced accuracy, and F1-Score, can provide a more
+precise perspective for comparing model performance.  These measures are 
+automatically generated by the caret package's confusionMatrix function, and
+can easily be extract from the returned object.  The expectation is that 
+sensitivity and specificity will provide information as to whether QDA or 
+Random Forest results are more suitable for integration into a medical image 
+augmentation system for spine classifications, since sensitivity and specificity
+are measures of the cost of error (Irizarry, n.d.). Moreover, balanced accuracy 
+and F1-Score will provide insight as to whether QDA or Random Forest would 
+likely generalize to other future data sets with different class prevalence, 
+since balanced accuracy and F1-Score work well for model assessment when 
+class prevalence bias is present.  To complete this analysis, the following 
+table summarizes the classes and their associated metrics for QDA and
+Random Forest, and the following plot provides a visual comparison of these
+performance metrics for QDA and Random Forest:
+
+``` {r, metric-summary, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Build confusion matrices for Random Forest and QDA and extract the
+### metrics that were determined to be of use for analyzing the 
+### machine learning results from QDA and Random Forest based on the
+### class prevalence bias and costs of errors in medicine
+
+# Create the confusion matrix from the verification data set using the
+# cross-validated Random Forest model
+rfConfusionMatrix <- confusionMatrix(predict(train_rf, verification),
+                factor(verification$diseaseClassification))
+
+# Create the confusion matrix from the verification data set using the
+# cross-validated QDA model
+qdaConfusionMatrix <- confusionMatrix(predict(train_qda, verification),
+                factor(verification$diseaseClassification))
+
+# Create a data frame to hold the 'byclass' confusion matrix computed
+# metrics identified as valuable for results assessment
+qdaMetrics <- as.data.frame(qdaConfusionMatrix$byClass)
+
+# Add new columns to hold the class and method
+qdaMetrics <- qdaMetrics %>% 
+  mutate(Class = row.names(qdaMetrics)) %>%
+  mutate(Method = "QDA")
+
+# Create a data frame to hold the 'byclass' confusion matrix computed
+# metrics identified as valuable for results assessment
+rfMetrics <- as.data.frame(rfConfusionMatrix$byClass)
+
+# Add new columns to hold the class and method
+rfMetrics <- rfMetrics %>% 
+  mutate(Class = row.names(rfMetrics)) %>%
+  mutate(Method = "Random Forest")
+
+# Combine the QDA metrics and Random Forest metrics data frames
+finalMetrics <- rbind(qdaMetrics, rfMetrics)
+
+# Change order of columns and metrics to include in the finalMetrics
+# tabular output using confusion matrix derived metrics for QDA and RF
+columnOrder <- c("Method", "Class", "Prevalence", "Sensitivity", 
+                 "Specificity", "Balanced Accuracy", "F1")
+finalMetrics <- finalMetrics[,columnOrder]
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(finalMetrics,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Random Forest and QDA Performance Metrics") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+# Create a new data frame as a copy of the finalMetrics data frame that was
+# output to a table and create a new column called 'Method_Class' that can
+# be used to generate colorized plots that are able to compare each method
+# and class specific metric in a single plot
+finalMetricsPlot <- finalMetrics %>% 
+  mutate(Method_Class = paste0(Method, " ", Class)) %>%
+  mutate(Method_Class = str_replace(Method_Class, 
+                                    pattern = "Class", replacement = "")) %>%
+  mutate(Method_Class = str_replace(Method_Class, 
+                                    pattern = "Random Forest", replacement = "RF"))
+
+# Rename the column names of the finalMetricsPlot data frame for appearance
+finalMetricsPlotNames <- c("Method", 
+                           "Class", 
+                           "Prevalence", 
+                           "Sensitivity", 
+                           "Specificity", 
+                           "Balanced_Accuracy",
+                           "F1")
+colnames(finalMetricsPlot) <- finalMetricsPlotNames
+
+
+### STHDA (n.d) vignette for the following bar plots to get the horizontal 
+### stacked format to display side-by-side classes of Random Forest and QDA
+### results for Sensitivity, Specificity, Balanced Accuracy, and F1-Score
+
+# Sensitivity Horizontal Stacked Class BarPlot
+sensitivityBarPlot <- ggplot(data = finalMetricsPlot, 
+                             aes(x = Class, y= Sensitivity, fill = Method)) + 
+  geom_bar(stat = "identity", alpha=0.9, position = position_dodge()) +
+  ggtitle("Sensitivity Comparision") +
+  xlab("Method and Class") + 
+  ylab("Value") +
+  theme(legend.position="bottom", legend.title = element_blank()) 
+
+
+# Specificity Horizontal Stacked Class BarPlot
+specificityBarPlot <- ggplot(data = finalMetricsPlot, 
+                             aes(x = Class, y = Specificity, fill = Method)) + 
+  geom_bar(stat = "identity", alpha=0.9, position = position_dodge()) +
+  ggtitle("Specificity Comparision") + 
+  xlab("Method and Class") + 
+  ylab("Value") +
+  theme(legend.position="bottom", legend.title = element_blank()) 
+
+# Balanced Accuracy Horizontal Stacked Class BarPlot
+balancedAccuracyBarPlot <- ggplot(data = finalMetricsPlot, 
+                             aes(x = Class, y = Balanced_Accuracy, fill = Method)) + 
+  geom_bar(stat = "identity", alpha=0.9, position = position_dodge()) +
+  ggtitle("Balanced Accuracy Comparision") + 
+  xlab("Method and Class") + 
+  ylab("Value") +
+  theme(legend.position="bottom", legend.title = element_blank()) 
+
+# F1-Score Horizontal Stacked Class BarPlot
+F1BarPlot <- ggplot(data = finalMetricsPlot, 
+                             aes(x = Class, y = F1, fill = Method)) + 
+  geom_bar(stat = "identity", alpha=0.9, position = position_dodge()) +
+  ggtitle("F1-Score Comparision") + 
+  xlab("Method and Class") + 
+  ylab("Value") +
+  theme(legend.position="bottom", legend.title = element_blank()) 
+
+# Use the library(cowplot) to combine and create a layout for the histogram
+# plots of each predictor in the training data, vignette Wilke (2022)
+plot_grid(sensitivityBarPlot, 
+          specificityBarPlot, 
+          balancedAccuracyBarPlot, 
+          F1BarPlot, ncol = 2, nrow = 2)
+```
+
+The sensitivity, specificity, balanced accuracy, and F1-Score for Random Forest 
+exceed those of QDA for all classes.  Perhaps QDA did not perform as well as 
+Random Forest because the degree of normality of the predictors used in 
+QDA cross-validation were inadequate.  Alternatively, QDA may be a
+more realistic solution compared to Random Forest because QDA is unaffected 
+by the class prevalence bias that is expected to exist within the data set, 
+where Random Forest does not have the same bias controlling characteristics
+(O'Brien & Ishwaran, 2019).
+
+Regardless of the class prevalence bias, as noted previously, balanced accuracy 
+and F1-Score are useful as machine learning solution metrics for imbalanced 
+data sets because they can evaluate an algorithm in a way that prevalence does 
+not cloud the assessment (Irizarry, n.d.).  Therefore, from the bar plots and 
+table above, the following performance comparisons between QDA and Random
+Forest were drawn: 
+
+* For both balanced accuracy and F1-Score, Random Forest out performed QDA
+in classifying Spondylolisthesis with metrics of 0.962 for balanced accuracy
+and 0.961 for F1-Score
+
+* For both balanced accuracy and F1-Score, Random Forest out performed QDA
+in classifying Normal spine characteristics with metrics of 0.833 for
+balanced accuracy and 0.766 for F1-Score;
+
+\newpage
+
+* For both balanced accuracy and F1-Score, Random Forest out performed QDA
+in classifying Disk Hernia with metrics of 0.734 for balanced accuracy
+and 0.612 for F1-Score
+
+Overall, specificity, sensitivity, balanced accuracy, and F1-Score indicate
+that Random Forest better classifies Spondylolisthesis, Normal spine, and
+Disk Hernia compared to QDA.
+
+Despite the ability of balanced accuracy and F1-Score to avoid being clouded by
+class prevalence, the relationship between real world prevalence of Disk Hernia 
+and Spondylolisthesis and this Vertebral Column Data Set has yet to be 
+considered.  To attempt to gain a sense of any disparity between real world 
+prevalence and the class prevalence in the Vertebral Column Data Set,
+secondary research was sought.  According to Dydyk et al. (2022), the prevalence
+of Disk Hernia is somewhere in the range of 5 to 20 cases per 1,000, and 
+Tenny & Gillis (2022) state that up to 18 percent of lumbar Magnetic Resonance 
+Imaging (MRI) patients present with Spondylolisthesis of various grades.  Although
+some prevalence information was found, being able to compare these measures
+to those in the Vertebral Column Data Set was difficult, because the secondary
+research presented binary classification between Disk Hernia and Normal spine
+characteristics and binary classification between Spondylolisthesis and 
+Normal spine characteristics, whereas the Vertebral Column Data Set has
+three classes.  For this reason, assumptions were required to compare the 
+prevalence from secondary research with the prevalence in the Vertebral 
+Column Data Set.  For simplicity, the normal classifications within the 
+Vertebral Column Data Set were assumed to be representative of the real world,
+which left a direct comparison to the secondary research for Disk Hernia
+and Spondylolisthesis prevalence.
+
+The following table shows the class percentages from the verification data
+(which is approximately the same for the training and test data sets): 
+
+``` {r, prevalence-metrics, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Extract the prevalence metrics from the confusion matrix metrics
+### that were already packaged into the qdaMetrics and rfMetrics data frames
+### so this prevalence information can be display in a table as a reminder and
+### for discussion in the report
+
+# Combine the QDA and Random Forest metrics data frames
+percentageMetrics <- rbind(qdaMetrics, rfMetrics)
+
+# Change order of columns and metrics to include in the finalMetrics
+# tabular output using confusion matrix derived metrics for QDA and RF
+ 
+percentageColumnOrder <- c("Method", "Class", "Prevalence")
+percentageMetrics <- percentageMetrics[,percentageColumnOrder]
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(percentageMetrics,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Random Forest and QDA Verification Data Prevalence") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+
+
+
+```
+
+The prevalence from the Vertebral Column Data Set shown in the table above 
+differs from the values presented by Dydyk et al. (2022) and Tenny & Gillis 
+(2022).  More specifically, two percent prevalence for Disk Hernia was noted 
+in the secondary research versus 19 percent in the Vertebral Column data, and 
+up to 18 percent prevalence for Spondylolisthesis in the secondary research 
+(which is based on MRI imagery collected -- true real world prevalence may be 
+much smaller as healthy people generally are not subjects of MRI collection) 
+versus 48 percent in the Vertebral Column data. Regardless of 
+the prior assumption of the Normal class in the Vertebral Column Data Set
+being representative of the real world prevalence, the merits of the 
+assumption, or others without better real world prevalence data, is weak, and 
+therefore, exposes a limitation of this small data set and the ability to 
+connect it to real world prevalence.
+
+In addition to real world prevalence, precision also matters given the goal
+of determining the feasibility of creating a future medical image 
+augmentation system.  Therefore, a summary table for class precision for 
+QDA and Random Forest are shown in the table below, and a comparison of 
+precision for QDA and Random Forest are shown in the plot below because 
+precision matters in medical diagnosis for its ability to quantify the accuracy 
+of True Positives (specificity) (Irizarry, n.d.); in other words, the capability
+of making a positive diagnosis when a medical condition exists. However, 
+precision should be scrutinized due to its limitation of potentially producing 
+optimistic values because of its tie to prevalence:
+
+``` {r, precision-metrics, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Extract the precision metrics from the confusion matrix metrics
+### that were already packaged into the qdaMetrics and rfMetrics data frames
+### so this precision information can be display in a table and plot for
+### analysis of the results of QDA and Random Forest
+
+# Combine the QDA and Random Forest metrics data frames
+precisionMetrics <- rbind(qdaMetrics, rfMetrics)
+
+# Change order of columns and metrics to include in the finalMetrics
+# tabular output using confusion matrix derived metrics for QDA and RF
+ 
+precisionColumnOrder <- c("Method", "Class", "Precision")
+precisionMetrics <- precisionMetrics[,precisionColumnOrder]
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(precisionMetrics,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "QDA and Random Forest Precision Comparision") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+# Precision Horizontal Stacked Class BarPlot
+precisionBarPlot <- ggplot(data = precisionMetrics, 
+                             aes(x = Class, y = Precision, fill = Method)) + 
+  geom_bar(stat = "identity", alpha=0.9, position = position_dodge()) +
+  ggtitle("QDA and Random Forest Precision Comparision") + 
+  xlab("Method and Class") + 
+  ylab("Value") +
+  theme(legend.position="bottom", legend.title = element_blank()) 
+
+precisionBarPlot
+
+
+
+```
+
+\newpage
+
+Overall, since imbalanced data has the ability to cloud Random Forests decision
+making (O'Brien & Ishwaran, 2019), despite Random Forest having better 
+performance metrics than QDA, which is believed to be devoid of class 
+prevalence effects, given the small data set with limited ability to 
+control the class prevalence, and the challenges in mirroring real
+world prevalence, as a precautionary approach, QDA was selected as the
+most trustworthy model to assess suitability for a future medical image 
+augmentation system.
+
+Based on selecting QDA as the preferred machine learning solution, QDA may
+provide meaningful augmentation information to medical image assessments based 
+on the performance metrics observed for balanced accuracy, F1-Score, and 
+precision.  These three metrics were selected because balanced accuracy and 
+F1-score incorporate measures of sensitivity and specificity, which are useful 
+in quantifying the cost of errors and their characteristics of having relief 
+from the clouding of class prevalence, and precision was selected as a 
+specificity measure since correctly diagnosing is important in medicine.
+
+Keeping the goal in mind of assessing the potential use of QDA in a future
+medical image augmentation system, setting a threshold to determine whether or 
+not a method would be valuable for augmentation helps to bring objectivity to 
+the assessment.  Therefore, a measure of 0.70 for the mean of balanced 
+accuracy, F1-Score, and precision, which can be thought of as ensembling 
+metrics relevant for the data characteristics of class prevalence bias and the 
+medical use case of considering the cost of errors, was selected as a cut-off 
+to judge the predictive utility for the potential use of each class in a 
+future medical image augmentation system.  In addition, and in the context of
+developing a framework for medical image augmentation systems, the metrics used 
+in the assessment ensemble could be weighted by health professionals based on
+their specific needs and their approach to diagnostics, which can provide the
+level of control that they may desire.
+
+To facilitate the threshold analysis, the means of balanced accuracy, 
+F1-Score, and precision for the QDA classifications are shown in the 
+following table:
+
+``` {r, compute-qda-means, echo=FALSE, warning=FALSE, message=FALSE}
+
+### Create ensembled accuracy metrics of balanced accuracy, F1-Score, and
+### precision to evaluate against a cut-off mean of 0.70 to determine
+### if the QDA machine learning solution has utility to use a specific
+### classification within a future image augementation system
+
+# Filter out QDA metrics based on the SL class 
+qdaSL_1 <- finalMetrics %>% filter(Method == "QDA", Class == "Class: SL")
+qdaSL_2 <- precisionMetrics %>% filter(Method == "QDA", Class == "Class: SL")
+
+# Compute the mean of the ensembled metric for the SL class
+qdaMeanSL <- (qdaSL_1$`Balanced Accuracy` + qdaSL_1$F1 + qdaSL_2$Precision)*(1/3)
+
+# Filter out QDA metrics based on the NO class 
+qdaNO_1 <- finalMetrics %>% filter(Method == "QDA", Class == "Class: NO")
+qdaNO_2 <- precisionMetrics %>% filter(Method == "QDA", Class == "Class: NO")
+
+# Compute the mean of the ensembled metric for the NO class
+qdaMeanNO <- (qdaNO_1$`Balanced Accuracy` + qdaNO_1$F1 + qdaNO_2$Precision)*(1/3)
+
+# Filter out QDA metrics based on the DH class 
+qdaDH_1 <- finalMetrics %>% filter(Method == "QDA", Class == "Class: DH")
+qdaDH_2 <- precisionMetrics %>% filter(Method == "QDA", Class == "Class: DH")
+
+# Compute the mean of the ensembled metric for the DH class
+qdaMeanDH <- (qdaDH_1$`Balanced Accuracy` + qdaDH_1$F1 + qdaDH_2$Precision)*(1/3)
+
+# Create a date frame to hold the ensembled metric means
+qdaMeans <- data.frame()
+
+# Populate the ensembled metric means into the qdaMeans data frame so they 
+# can be presented in a table and analyzed
+qdaMeans[1, "Method"] <- "QDA"
+qdaMeans[1, "DH Mean"] <- qdaMeanDH
+qdaMeans[1, "NO Mean"] <- qdaMeanNO
+qdaMeans[1, "SL Mean"] <- qdaMeanSL
+
+# Build and display table using knitr vignette 
+# (Xie et. al., 2022, Chapter 10; Pileggi, 2022; Zhu, 2021)
+knitr::kable(qdaMeans,
+             booktabs = TRUE,
+             longtable = TRUE,
+             linesep = "",
+             row.names = FALSE,
+             caption = "Mean QDA Performance Metrics (Ensemble of Balanced Accuracy, F1-Score, and Precision)") %>%
+  kable_styling(latex_options = c("striped"), 
+                position = "center",
+                font_size = 8) 
+
+
+
+```
+
+
+From the table above, the mean score for Spondylolisthesis and Normal spine 
+classes met or exceeded the threshold of 0.7, and are therefore, 
+recommended for consideration in a future medical image augmentation 
+system.  However, the mean score for Disk Hernia did not meet the 0.70 
+threshold.  Therefore, QDA Disk Hernia classifications were not recommended 
+to be included as an information source within a future future medical image 
+augmentation system.
+
+\newpage
+
+# Conclusion and Future Work
+
+Out of three machine learning solutions of QDA, Random Forest, and KNN used to
+predict spine classifications of Disk Hernia, Normal, and Spondylolisthesis,
+the accuracy for the cross-validated solutions generated using Random Forest 
+and QDA had higher accuracy on the verification data than the preliminary 
+test accuracy results, which was evidence that Random Forest and QDA 
+did not over fit.  Since the KNN-5 solution produced accuracy on the 
+verification set that was three percent lower than the test set, the KNN-5 
+solution was categorized as over fit.
+
+In comparing the performance of QDA and Random Forest, Random Forest out 
+performed QDA for every metric used to analyze the results.  More specifically, 
+these metrics consisted of sensitivity, specificity, balanced accuracy, F1-Score,
+and precision.  Despite Random Forest exhibiting better performance than QDA, 
+QDA was selected as the most appropriate model to consider for a future medical 
+image augmentation system due to the class prevalence characteristics of the 
+Vertebral Column Data Set, which invoked the belief that the decision trees 
+generated by Random Forest have bias (O'Brien & Ishwaran, 2019) that is less 
+controlled compared to QDA.
+
+The class prevalence characteristics of the Vertebral Column Data Set and the
+small size of the data set (310 patients) were the major limiting factors in
+producing solutions that were free from bias.  More specifically, the class 
+prevalence disparity within the Vertebral column Data Set and the difficulty 
+ascertaining whether the class prevalence disparity was representative of real 
+world prevalence of Disk Hernia and Spondylolisthesis was one of the major 
+contributors to selecting QDA over Random Forest, because QDA
+is a version of Naive Bayes that controls for prevalence (Irizarry, 2022, 
+Chapter 31).  
+
+Another major factor that influenced selecting QDA over Random Forest was 
+discovering that highly imbalanced data has been observed to reduce the 
+reliability of Random Forest solutions to generalize well to new data, because 
+tree formation within the model may be based on classification error 
+(O'Brien & Ishwaran, 2019).  This implied potential for classification error
+could make the decisions for tree algorithms non-nonsensical when applied to 
+future data that has a different class prevalence.  Although class imbalance 
+was evident, stating with confidence whether the imbalanced data is extreme 
+enough to render nonsensical decision trees cannot be proven nor
+evaluated with this small data set.  Therefore, the conservative decision was
+to reject Random Forest until the solution could be retrained and evaluated on a 
+larger data set where prevalence could be controlled.
+
+Although opinions may differ between health professionals and data scientists,
+a cut-off score for the mean of balanced accuracy, F1-Score and precision of 0.7
+was used to determine the classes that would potentially qualify for 
+implementation in a future medical image augmentation system.  For the QDA 
+solution, a Normal classification achieved a cut-off score of 0.703, 
+Spondylolisthesis achieved a cut-off score of 0.816, and Disk Hernia 
+achieved a cut-off score of 0.614.  Based on these scores and the threshold, 
+Spondylolisthesis and Normal classifications could be considered for use in a 
+future medical image augmentation system.  More importantly, in the spirit of
+developing a framework for medical image augmentation systems, the metrics used 
+in the assessment ensemble could be weighted by health professionals based on
+their specific needs and their approach to diagnostics, which could provide the
+level of control that they may desire.
+
+Given the foregoing limitations of the small data set size and the class
+prevalence issues identified, future work requires a much larger data set
+that is representative of the prevalence of Disk Hernia and Spondylolisthesis
+in the real world.  With a data set of sufficient size and real world 
+prevalence, Random Forest could potentially be retrained to obtain a reliable, 
+effective, and accurate medical decision making model (Podgorelec et al., 2002).
+In addition, an opportunity to obtain a more robust data set may present
+itself by developing a Shiny web application, where health professionals can
+upload imagery and measurements provided patient consent has been obtained. 
+
+Should a Shiny web application be developed, the expanded data set could be 
+continually re-trained and evaluated in order to advance this specific 
+application along with providing a rich data set that can be used in the 
+future for other research.  Potentially, the long term impacts may include, 
+advancement in conceptualization and building upon the framework laid out here
+for the assessment of machine learning results for medical applications, and 
+increased interest in developing augmentation systems.  However, to be clear, 
+the goal of creating and promoting machine learning augmentation systems in 
+medicine is not to replace the judgment of qualified health 
+professionals; as the classification results here show, the predictions are 
+by no means perfect.  Instead, the potential benefits include providing a data 
+rich environment to assist health professionals, and the construction of 
+various data platforms for collecting and gaining insights from medical data 
+that in the future can benefit society in new and novel ways.
+
+# References
+
+| Daffodil Software. (2017, July 30). *9 Applications of Machine Learning from*
+|    *Day-to-Day Life.* Medium. https://medium.com/app-affairs/9-applications
+|     -of-machine-learning-from-day-to-day-life-112a47a429d0
+
+| Dalpaiz, D. (2020). *R for Statistical Learning.*
+|    https://daviddalpiaz.github.io/r4sl/
+    
+| Dalpaiz, D. (2022). *Applied Statistics with R.* https://book.stat420.org
+
+| Dydyk, A.M., Massa, R.N., Mesfin, F.B. (2022, January 18). *Disc Herniation.*
+|    National Library of Medicine. https://www.ncbi.nlm.nih.gov/books/
+|    NBK441822/#:~:text=The%20incidence%20of%20a%20herniated,1%2D3%20percent
+|    %20of%20patients.
+
+
+| Irizarry, R.A., (n.d.) Professional Certificate in Data Science [MOOC]. 
+|    HarvardX https://www.edx.org/professional-certificate/harvardx-data-science
+
+| Irizarry, R.A., (2022). *Introduction to Data Science: Data Analysis*
+|    *and Prediction Algorithms with R* 
+|    bookdown. http://rafalab.dfci.harvard.edu/dsbook/
+
+| Koslosky, E., & Gendelberg, D. (2020). Classification in Brief: The Meyerding
+|    Classification System of Spondylolisthesis. *Clinical Orthopaedics* 
+|    *and Related Research, 478*(5), 1125-1130. 10.1097/CORR.0000000000001153 
+
+| Kuhn, M. (2019, March 27). *The caret Package.* GitHub. 
+|    https://topepo.github.io/caret/index.html
+
+| Kundu, R. (2023, March 2). *Confusion Matrix: How To Use It & Interpret* 
+|    *Results [Examples].* V7 Labs. https://www.v7labs.com/blog/
+|    confusion-matrix-guide
+
+
+| Le Huec, J.C., Aunoble, S., Philippe, L. (2011). Pelvic parameters: origins
+|    and significance. *European spine journal, 20*(5), 564-571. 
+|    10.1007/s00586-011-1940-1.
+
+| Mota, H., Barreto, G., Neto, A. (2011). Vertebral Column Data Set [Data set].
+|    UCI Machine Learning Repository.
+|    https://archive.ics.uci.edu/ml/datasets/vertebral%2Bcolumn
+
+| O'Brien, R., & Ishwaran, H. (2019). A Random Forests Quantile Classifier for 
+|    Class Imbalanced Data. *Pattern Recognition, 90*, 232–249. doi:10.1016/j.
+|    patcog.2019.01.036.
+
+| Olugbenga, M. (2023, January 25). *Balanced Accuracy: When Should You Use It?*
+|    neptune.ai. https://neptune.ai/blog/balanced-accuracy
+
+| Pileggi, S. (2022, January 23). *Report Ready PDF tables with rmarkdown,*
+|    *knitr, kableExtra, and LaTeX.* Piping hot data.
+|    https://www.pipinghotdata.com/posts/2022-01-24-report-ready-pdf-tables-
+|    with-rmarkdown-knitr-kableextra-and-latex/
+
+| Podgorelec, V., Kokol, P., Stiglic, B., Rozman, I. (2002). Decision trees: 
+|    an overview and their use in medicine. *Journal of Medical Systems, 26*
+|    (5), 445-463. 10.1023/a:1016409317640
+
+| Speck, M. (2017, May 15). *What is K-Nearest Neighbors?* Medium.
+|    https://medium.com/@mjspeck/what-is-k-nearest-neighbors-c9b4cdf9f35c
+
+| STHDA. (n.d.). *ggplot2 barplots : Quick start guide - R software and data*
+|    *visualization.* Statistical Tools for High-Throughput Data Analysis.
+|    http://www.sthda.com/english/wiki/ggplot2-barplots-quick-start-guide-r-
+|    software-and-data-visualization
+
+
+| Tenny, S., & Gillis, C.C. (2022, May 24). *Spondylolisthesis.*
+|    https://www.ncbi.nlm.nih.gov/books/NBK430767/#:~:text=Current%20estimates
+|    %20for%20prevalence%20are,for%2075%25%20of%20all%20cases.
+
+| The R Foundation. (n.d.) What is R? https://www.r-project.org/about.html
+
+| Wickham, H. (2014). Tidy Data. *Journal of Statistical Software, 59*(10),
+|    1-23. https://doi.org/10.18637/jss.v059.i10
+
+| Wilke, C.O., (2022, December 15). *Introduction to cowplot.* CRAN.
+|    https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.
+|    html#:~:text=The%20cowplot%20package%20is%20a,or%20mix%20plots%20with%20
+|    images.
+
+| Xie, Y., Dervieux, C., Riederer, E. (2022). *R Markdown Cookbook.*
+|    Chapman & Hall/CRC. https://bookdown.org/yihui/rmarkdown-cookbook/
+
+| Zhu, H. (2021). *Create Awesome LaTeX Table with knitr::kable and kableExtra.*
+|    R-project. https://cran.r-project.org/web/packages/kableExtra/vignettes/
+|    awesome_table_in_pdf.pdf
+
+
+# Acknowledgments {-}
+
+This work has been supported by the HarvardX Data Science Professional
+Certificate course material, and the various textbooks and vignettes 
+provided within the references section of the report. Creating this report
+would not have been possible without the learning that took place from
+completing the first eight courses in the series, the knowledge gained from
+reading the sources noted, and the R-package documentation that was used to
+implement this work.
+
